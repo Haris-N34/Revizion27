@@ -13,6 +13,22 @@ from vision.yolo.runtime.scan import scan
 
 STOP = GuidanceCommand(Direction.STOP, 0, 0.0)
 HAND_LOST_AFTER_S = 2.0
+COVER_MARGIN = 0.15  # fingertip within the box grown by 15% counts as covering it
+
+
+def _inside(x: float, y: float, d: Detection, margin: float = 0.0) -> bool:
+    mx, my = (d.x2 - d.x1) * margin, (d.y2 - d.y1) * margin
+    return d.x1 - mx <= x <= d.x2 + mx and d.y1 - my <= y <= d.y2 + my
+
+
+def _iou(a: Detection, b: Detection) -> float:
+    w = min(a.x2, b.x2) - max(a.x1, b.x1)
+    h = min(a.y2, b.y2) - max(a.y1, b.y1)
+    if w <= 0 or h <= 0:
+        return 0.0
+    inter = w * h
+    union = (a.x2 - a.x1) * (a.y2 - a.y1) + (b.x2 - b.x1) * (b.y2 - b.y1) - inter
+    return inter / union if union > 0 else 0.0
 
 
 class State(str, Enum):
@@ -79,8 +95,7 @@ class Guide:
             return None
         found = self.detector.detect(frame, self.target)
         self.hand = self.tracker.track(frame)
-        if found:
-            self.det = self._keep_distance_if_covered(found[0])  # else keep the last box
+        self.det = self._update_target(found)
         self.cmd = self.compute(self.det, self.hand, frame.shape, self.config)
         if self.stabilizer is not None:
             self.cmd = self.stabilizer.update(self.cmd)
@@ -92,14 +107,27 @@ class Guide:
             self.state = State.DONE
         return self.cmd
 
-    def _keep_distance_if_covered(self, new: Detection) -> Detection:
-        """While the fingertip is over the object, the hand hides part of it: the box
-        shrinks and the object looks farther than it is. Keep the last good distance."""
+    def _update_target(self, found: list[Detection]) -> Detection | None:
+        """Pick this frame's target box, robust to the hand covering the object.
+
+        - Nothing found: keep the last box (object hidden or a missed frame).
+        - Hand over the object (fingertip inside the last box + COVER_MARGIN): keep the
+          last full box. The hand hides part of it, so YOLO sees a shrunken box or two
+          fragments (e.g. a phone split down the middle) whose center and size-based
+          distance are wrong. Objects don't move while you reach for them.
+        - Otherwise: the detection overlapping the last box most (stays on the same
+          object when there are fragments or several cans), else the most confident.
+        """
         old, hand = self.det, self.hand
-        if old is None or old.distance_m is None or hand is None:
-            return new
-        covered = old.x1 <= hand.x <= old.x2 and old.y1 <= hand.y <= old.y2
-        return replace(new, distance_m=old.distance_m) if covered else new
+        if not found:
+            return old
+        if old is None:
+            return found[0]
+        if hand is not None and _inside(hand.x, hand.y, old, COVER_MARGIN):
+            best = found[0]
+            return replace(old, confidence=best.confidence, frame_id=best.frame_id)
+        overlapping = [d for d in found if _iou(d, old) > 0]
+        return max(overlapping, key=lambda d: _iou(d, old)) if overlapping else found[0]
 
     def _check_lost(self) -> None:
         if self.cmd.direction != Direction.LOST:

@@ -151,3 +151,46 @@ def test_object_distance_kept_while_hand_covers_it():
     tracker.pos = (5.0, 5.0)  # hand moves away: trust new estimates again
     guide.step(FRAME)
     assert guide.det.distance_m == 1.2
+
+
+def test_hand_over_phone_keeps_full_box():
+    """Hand covers the middle of a phone: YOLO returns two fragments; keep the full box."""
+    from shared.contracts import Detection
+
+    guide, tracker, _, _, _ = make()
+    guide.find([FRAME] * 10, "can")
+    full = Detection("can", 0.9, 300, 100, 380, 300, 0, distance_m=0.5)
+    guide.det = full
+
+    class Fragments(FakeDetector):
+        def detect(self, frame, target):
+            return [
+                Detection("can", 0.8, 300, 100, 380, 170, 1, distance_m=1.4),  # top half
+                Detection("can", 0.7, 300, 240, 380, 300, 1, distance_m=1.6),  # bottom
+            ]
+
+    guide.detector = Fragments()
+    tracker.pos, tracker.speed = (340, 205), 0  # fingertip on the middle
+    guide.step(FRAME)
+    kept = guide.det
+    assert (kept.x1, kept.y1, kept.x2, kept.y2, kept.distance_m) == (300, 100, 380, 300, 0.5)
+
+
+def test_follows_the_same_object_when_several_are_seen():
+    from shared.contracts import Detection
+
+    guide, tracker, _, _, _ = make()
+    guide.find([FRAME] * 10, "can")
+    guide.det = Detection("can", 0.6, 100, 100, 160, 200, 0)
+
+    class TwoCans(FakeDetector):
+        def detect(self, frame, target):
+            return [
+                Detection("can", 0.95, 500, 100, 560, 200, 1),  # other can, more confident
+                Detection("can", 0.60, 104, 102, 164, 202, 1),  # ours, moved slightly
+            ]
+
+    guide.detector = TwoCans()
+    tracker.pos, tracker.speed = (20, 460), 0  # hand far away
+    guide.step(FRAME)
+    assert guide.det.x1 == 104
