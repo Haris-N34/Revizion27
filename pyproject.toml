@@ -1,5 +1,6 @@
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
+pythonpath = ["."]
 testpaths = ["shared", "hardware", "vision", "guidance", "app"]
 
 [tool.ruff]
