@@ -1,0 +1,7 @@
+-r shared/requirements.txt
+-r hardware/requirements.txt
+-r vision/yolo/model/requirements.txt
+-r vision/yolo/runtime/requirements.txt
+-r vision/hands/requirements.txt
+-r guidance/requirements.txt
+-r app/requirements.txt

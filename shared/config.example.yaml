@@ -1,0 +1,35 @@
+# Copy to config.yaml at the repo root and fill in your machine's values.
+# config.yaml is gitignored. Missing keys fall back to defaults in shared/config.py.
+
+# OpenCV camera index (0 = built-in webcam on most laptops)
+camera_index: 0
+
+# true if the webcam faces the user; guidance then flips left/right
+mirror: true
+
+# Arduino port: COM3 on Windows, /dev/tty.usbmodem1101 on macOS
+# (python -m hardware.host.demo --list-ports prints them)
+serial_port: null
+
+# Serial speed; must match the firmware
+baud: 115200
+
+# Which wrist wears the band: left or right
+wrist: right
+
+yolo:
+  # Weights file, relative to the repo root (models/ is gitignored)
+  weights: models/octaby.pt
+  # Minimum detection confidence, 0.0 to 1.0
+  confidence: 0.5
+  # Consecutive frames the target must be seen before it counts as found
+  confirm_frames: 3
+
+# Seconds to scan for the target before saying "I can't find a ..."
+scan_timeout_s: 5
+
+guidance:
+  # Fingertip within this many pixels of the target center = ARRIVED (grab)
+  arrive_px: 40
+  # Ignore offsets smaller than this on an axis (stops jitter between directions)
+  dead_zone_px: 25
