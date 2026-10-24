@@ -63,13 +63,13 @@ def _depth_command(
 def compute(
     det: Detection, hand: HandPosition | None, frame_shape, config: dict
 ) -> GuidanceCommand:
-    """Direction and strength to move the hand (index fingertip) toward the target.
+    """Direction and strength to move the hand's grab point (HandPosition.x, y) to the target.
 
     - No hand: LOST.
     - Fingertip inside the target box, or within arrive_px of its center: lined up.
       Then, if both distances are known: FORWARD / BACK until the hand's depth is
       within depth_tolerance of the object's, then ARRIVED. Otherwise ARRIVED.
-    - Each axis counts as aligned while the fingertip is within the box's span on
+    - Each axis counts as aligned while the hand point is within the box's span on
       that axis (never tighter than dead_zone_px), so a big/close object is easy to
       line up with and a small/far one needs more precision.
     - Intensity grows with distance, 80..255, so it is always strong enough to feel.

@@ -1,7 +1,7 @@
 """python -m app.main [--target can] [--mock-band] [--video FILE] [--no-voice] [--no-window]
                    [--say-directions auto/on/off]
 
-Live view: target box, hand skeleton, fingertip-to-target line and band command.
+Live view: target box, hand skeleton, hand-to-target line and band command.
 SPACE: ask out loud ("where is the can?").  r: rescan.  q / Esc: quit.
 Without --target it starts listening right away. --no-voice types instead of talking.
 """

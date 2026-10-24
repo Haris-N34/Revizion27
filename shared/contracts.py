@@ -22,7 +22,7 @@ class Detection:
 
 @dataclass(frozen=True)
 class HandPosition:
-    x: float  # index fingertip (MediaPipe landmark 8), pixels
+    x: float  # grab point, pixels: palm center (default) or index fingertip (config hand_point)
     y: float
     wrist_x: float  # landmark 0, pixels
     wrist_y: float

@@ -19,7 +19,9 @@ vision/hands/
   frames, don't recreate it each call).
 - MediaPipe wants RGB; frames arrive as OpenCV BGR. Convert inside `track`.
 - Convert normalized landmarks to pixels using the frame's width and height.
-- Fill `x`, `y` from landmark 8 (index fingertip) and `wrist_x`, `wrist_y`
+- Fill `x`, `y` with the grab point: palm center = mean of landmarks 0, 5, 9,
+  13, 17 (config `hand_point: palm`, default) or landmark 8, the index fingertip
+  (`hand_point: index_tip`). Fill `wrist_x`, `wrist_y`
   from landmark 0.
 - If `config["mirror"]` is true, flip `handedness` so it is from the user's
   point of view.

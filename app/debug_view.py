@@ -1,4 +1,4 @@
-"""OpenCV overlay: target box, hand skeleton, fingertip-to-target line, status."""
+"""OpenCV overlay: target box, hand skeleton, hand-to-target line, status."""
 
 import cv2
 import numpy as np
@@ -7,7 +7,7 @@ from shared.contracts import Detection, GuidanceCommand, HandPosition
 
 try:
     from vision.hands.draw import draw_hand
-except ImportError:  # hands branch not merged yet: fingertip dot only
+except ImportError:  # hands module missing: grab-point dot only
     draw_hand = None
 
 GREEN, RED, YELLOW, WHITE = (0, 255, 0), (0, 0, 255), (0, 255, 255), (255, 255, 255)
@@ -38,7 +38,7 @@ def render(
             out, f"{det.label} {det.confidence:.2f}{dist}", (p1[0], max(20, p1[1] - 8)), GREEN, 0.6
         )
     if landmarks and draw_hand is not None:
-        draw_hand(out, landmarks)
+        draw_hand(out, landmarks, grab=(hand.x, hand.y) if hand else None)
     if hand is not None:
         tip = (int(hand.x), int(hand.y))
         cv2.circle(out, tip, 9, RED, -1, cv2.LINE_AA)

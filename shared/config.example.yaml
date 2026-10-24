@@ -17,6 +17,10 @@ baud: 115200
 # Which wrist wears the band: left or right
 wrist: right
 
+# Point of the hand guided onto the object: palm (center of the palm, for grabbing)
+# or index_tip (index fingertip, for pointing/touching)
+hand_point: palm
+
 yolo:
   # Weights file, relative to the repo root (models/ is gitignored)
   weights: models/octaby.pt

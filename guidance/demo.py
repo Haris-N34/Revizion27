@@ -1,6 +1,6 @@
 """python -m guidance.demo
 
-No camera: the mouse is the fingertip. Left-click moves the can, right-click hides or
+No camera: the mouse is the hand point (palm center). Left-click moves the can, right-click hides or
 shows the hand, w / s move the hand deeper / shallower (can is at 60 cm), d toggles
 depth on/off, m toggles mirror, q / Esc quits. Shows raw compute() and the
 Stabilizer output, and prints each change of the stabilized command.

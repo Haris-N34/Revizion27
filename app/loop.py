@@ -13,7 +13,7 @@ from vision.yolo.runtime.scan import scan
 
 STOP = GuidanceCommand(Direction.STOP, 0, 0.0)
 HAND_LOST_AFTER_S = 2.0
-COVER_MARGIN = 0.15  # fingertip within the box grown by 15% counts as covering it
+COVER_MARGIN = 0.15  # hand point within the box grown by 15% counts as covering it
 MISSING_FRAMES = 8  # target unseen this many frames (not under the hand) = out of view
 TARGET_LOST_S = 6.0  # out of view this long: give up and scan again
 
@@ -135,7 +135,7 @@ class Guide:
         """Pick this frame's target box, robust to the hand covering the object.
 
         - Nothing found: keep the last box (object hidden or a missed frame).
-        - Hand over the object (fingertip inside the last box + COVER_MARGIN): keep the
+        - Hand over the object (hand point inside the last box + COVER_MARGIN): keep the
           last full box. The hand hides part of it, so YOLO sees a shrunken box or two
           fragments (e.g. a phone split down the middle) whose center and size-based
           distance are wrong. Objects don't move while you reach for them.

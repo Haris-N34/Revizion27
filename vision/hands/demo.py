@@ -38,9 +38,9 @@ def main() -> None:
             dt = time.perf_counter() - start
             fps = 0.9 * fps + 0.1 / dt if fps else 1 / dt
 
-            draw_hand(frame, tracker.landmarks)
+            draw_hand(frame, tracker.landmarks, grab=(hand.x, hand.y) if hand else None)
             if hand:
-                status = f"{hand.handedness} tip=({hand.x:.0f}, {hand.y:.0f})"
+                status = f"{hand.handedness} grab=({hand.x:.0f}, {hand.y:.0f})"
             else:
                 status = "no hand"
             cv2.putText(

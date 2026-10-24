@@ -21,7 +21,7 @@ merge.
 2. Target point = `det.center`. Hand point = `(hand.x, hand.y)`.
 3. `dx = target_x - hand_x`, `dy = target_y - hand_y` (pixels; y grows down).
    If `config["mirror"]` is true, use `-dx`.
-4. If the fingertip is inside the detection box, or
+4. If the hand point (palm center by default) is inside the detection box, or
    `hypot(dx, dy) < guidance.arrive_px`: return `ARRIVED`, intensity 255.
 5. Ignore any axis whose absolute value is under `guidance.dead_zone_px`.
 6. Direction from the signs: `dx > 0` is RIGHT, `dy < 0` is UP; both axes

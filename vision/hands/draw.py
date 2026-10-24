@@ -18,8 +18,10 @@ def draw_hand(
     frame: np.ndarray,
     landmarks: list[tuple[float, float]] | None,
     color: tuple[int, int, int] = (255, 200, 0),
+    grab: tuple[float, float] | None = None,
 ) -> np.ndarray:
-    """Draw bones and joints in place; the index fingertip gets a bigger dot."""
+    """Draw bones and joints in place, and a big red dot on the grab point
+    (HandPosition.x, y; defaults to the palm center)."""
     if not landmarks:
         return frame
     pts = [(int(x), int(y)) for x, y in landmarks]
@@ -27,5 +29,8 @@ def draw_hand(
         cv2.line(frame, pts[a], pts[b], color, 2, cv2.LINE_AA)
     for p in pts:
         cv2.circle(frame, p, 4, (255, 255, 255), -1, cv2.LINE_AA)
-    cv2.circle(frame, pts[8], 9, (0, 0, 255), -1, cv2.LINE_AA)
+    if grab is None:
+        palm = [pts[i] for i in (0, 5, 9, 13, 17)]
+        grab = (sum(p[0] for p in palm) / 5, sum(p[1] for p in palm) / 5)
+    cv2.circle(frame, (int(grab[0]), int(grab[1])), 9, (0, 0, 255), -1, cv2.LINE_AA)
     return frame

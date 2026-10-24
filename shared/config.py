@@ -15,6 +15,7 @@ DEFAULTS: dict = {
     "serial_port": None,
     "baud": 115200,
     "wrist": "right",
+    "hand_point": "palm",
     "yolo": {
         "weights": "models/octaby.pt",
         "confidence": 0.5,

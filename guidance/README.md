@@ -4,7 +4,7 @@
 `Stabilizer(config).update(cmd)`: stops flicker; LOST/ARRIVED must hold a few frames.
 Hand distance (`HandPosition.distance_m`) comes from `vision/hands` palm size.
 
-1. Demo (no camera, mouse = fingertip): `python -m guidance.demo`
+1. Demo (no camera, mouse = hand point): `python -m guidance.demo`
 2. Tests: `pytest guidance`
 `turn_toward(last_det, frame_shape, config)`: target left the view at an edge -> turn LEFT/RIGHT.
 

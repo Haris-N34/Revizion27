@@ -26,7 +26,7 @@ class FakeDetector:
 
 
 class FakeHandTracker:
-    """A fingertip that starts bottom-left and moves `speed` px per frame toward `goal`."""
+    """A hand point that starts bottom-left and moves `speed` px per frame toward `goal`."""
 
     def __init__(self, config: dict | None = None, speed: float = 40.0, visible: bool = True):
         self.speed = speed

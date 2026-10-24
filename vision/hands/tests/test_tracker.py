@@ -48,12 +48,20 @@ def frame():
     return np.zeros((H, W, 3), np.uint8)
 
 
-def test_fingertip_and_wrist_in_pixels():
+def test_grab_point_is_palm_center_by_default():
     tracker, _ = make(_result())
     hand = tracker.track(frame())
-    assert (hand.x, hand.y) == pytest.approx((8 / 40 * W, 8 / 30 * H))
+    # Landmark i sits at (i/40, i/30); palm center = mean of 0, 5, 9, 13, 17 = 8.8
+    assert (hand.x, hand.y) == pytest.approx((8.8 / 40 * W, 8.8 / 30 * H))
     assert (hand.wrist_x, hand.wrist_y) == (0, 0)
     assert len(tracker.landmarks) == 21
+
+
+def test_grab_point_can_be_index_fingertip():
+    cfg = dict(DEFAULTS, hand_point="index_tip")
+    tracker = HandTracker(cfg, landmarker=FakeLandmarker(_result()))
+    hand = tracker.track(frame())
+    assert (hand.x, hand.y) == pytest.approx((8 / 40 * W, 8 / 30 * H))
 
 
 def test_no_hand_is_none():

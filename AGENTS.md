@@ -100,7 +100,8 @@ class Detection:
 
 @dataclass(frozen=True)
 class HandPosition:
-    x: float              # index fingertip (MediaPipe landmark 8), pixels
+    x: float              # grab point, pixels: palm center (default) or
+                          # index fingertip, set by config hand_point
     y: float
     wrist_x: float        # landmark 0, pixels
     wrist_y: float
@@ -186,6 +187,7 @@ frames as arguments; their own `demo.py` may open a camera for testing.
   `/dev/tty.usbmodem1101`), `baud`, `wrist` (`left`/`right`), `yolo.weights`,
   `yolo.confidence` (default 0.5), `yolo.confirm_frames` (default 3),
   `scan_timeout_s` (default 5), `camera_hfov_deg` (default 70),
+  `hand_point` (`palm` default, or `index_tip`),
   `guidance.arrive_px`, `guidance.dead_zone_px`, `guidance.depth_tolerance`
   (default 0.15).
 - New keys: add them to `config.example.yaml` via a shared PR (rule 3), and give
