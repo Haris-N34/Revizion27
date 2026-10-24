@@ -75,6 +75,7 @@ def test_every_label_has_a_real_size():
     from vision.yolo.model.classes import SIZES_M
 
     assert set(SIZES_M) == set(SUPPORTED)
-    for metres, side in SIZES_M.values():
-        assert 0.02 < metres < 0.5
-        assert side in ("height", "longest")
+    for kind, *metres in SIZES_M.values():
+        assert kind in ("height", "flat")
+        assert len(metres) == (1 if kind == "height" else 2)
+        assert all(0.02 < m < 0.5 for m in metres)

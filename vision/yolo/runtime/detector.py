@@ -16,13 +16,16 @@ FALLBACK_CLASSES = ["can", "bottle", "cup", "cell phone", "remote"]
 FALLBACK_PROMPTS = {"can": "drink can"}
 # Real size per label for distance estimates (model/classes.py SIZES_M when present).
 FALLBACK_SIZES_M = {
-    "can": (0.122, "height"),
-    "bottle": (0.23, "height"),
-    "cup": (0.095, "height"),
-    "cell phone": (0.15, "longest"),
-    "remote": (0.18, "longest"),
-    "mouse": (0.11, "longest"),
+    "can": ("height", 0.122),
+    "bottle": ("height", 0.23),
+    "cup": ("height", 0.095),
+    "cell phone": ("flat", 0.1634, 0.078),
+    "remote": ("flat", 0.18, 0.045),
+    "mouse": ("flat", 0.11, 0.06),
 }
+# A flat object's box must match its real long:short shape within this much to count
+# as facing the camera (lying flat or tilted squashes one side; a hand hides part).
+SHAPE_TOLERANCE = 0.2
 DEFAULT_HFOV_DEG = 70.0
 IMGSZ = 640
 
@@ -48,7 +51,7 @@ def _supported() -> tuple[list[str], dict[str, str]]:
     return list(SUPPORTED), dict(PROMPTS)
 
 
-def _sizes() -> dict[str, tuple[float, str]]:
+def _sizes() -> dict[str, tuple]:
     try:
         from vision.yolo.model.classes import SIZES_M
     except ImportError:
@@ -64,21 +67,28 @@ def focal_px(frame_width: int, hfov_deg: float) -> float:
 def object_distance(
     label: str, w_px: float, h_px: float, frame_width: int, hfov_deg: float, sizes: dict
 ) -> float | None:
-    """Camera-to-object distance in metres from the box size, or None if unknown.
+    """Camera-to-object distance in metres from the box size, or None if unreliable.
 
-    Only for upright objects ("height" in the size table): their box height stays true
-    as they turn. Flat ones (phone, remote, mouse) lie, tilt and get half-covered by
-    the hand, so their box size says little about distance; guidance stays 2D for them.
+    Upright objects ("height"): from box height, which stays true as they turn.
+    Flat objects ("flat"): only when the box has the object's real long:short shape
+    (within SHAPE_TOLERANCE), i.e. it faces the camera, like a phone standing up.
+    Lying flat, tilted or half-covered by the hand squashes the box and the distance
+    would be wrong, so it's None and guidance stays 2D.
     """
-    if label not in sizes:
+    if label not in sizes or h_px <= 0:
         return None
-    real_m, side = sizes[label]
-    if side != "height":
+    kind, *real = sizes[label]
+    focal = focal_px(frame_width, hfov_deg)
+    if kind == "height":
+        return float(focal * real[0] / h_px)
+    if w_px <= 0:
         return None
-    px = h_px
-    if px <= 0:
+    long_m, short_m = real
+    long_px, short_px = max(w_px, h_px), min(w_px, h_px)
+    shape = (long_px / short_px) / (long_m / short_m)
+    if abs(shape - 1) > SHAPE_TOLERANCE:
         return None
-    return float(focal_px(frame_width, hfov_deg) * real_m / px)
+    return float(focal * long_m / long_px)
 
 
 def _device() -> str:

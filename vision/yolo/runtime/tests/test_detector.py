@@ -81,14 +81,14 @@ def test_distance_from_box_height():
 
     from vision.yolo.runtime.detector import focal_px, object_distance
 
-    sizes = {"can": (0.122, "height"), "mouse": (0.11, "longest")}
+    sizes = {"can": ("height", 0.122), "mouse": ("flat", 0.11, 0.06)}
     f = focal_px(640, 70)
     assert f == pytest.approx(320 / math.tan(math.radians(35)))
     # A can 100 px tall at 640 px wide, 70 deg: f * 0.122 / 100
     assert object_distance("can", 50, 100, 640, 70, sizes) == pytest.approx(f * 0.122 / 100)
     # Twice as tall -> half the distance
     assert object_distance("can", 50, 200, 640, 70, sizes) == pytest.approx(f * 0.122 / 200)
-    # Flat objects: no distance (box size is unreliable when they lie, tilt, or are held)
+    # Flat object with the wrong box shape (lying/tilted): no distance
     assert object_distance("mouse", 110, 40, 640, 70, sizes) is None
     assert object_distance("banana", 50, 100, 640, 70, sizes) is None
     assert object_distance("can", 50, 0, 640, 70, sizes) is None
@@ -97,7 +97,7 @@ def test_distance_from_box_height():
 def test_wider_fov_means_closer():
     from vision.yolo.runtime.detector import object_distance
 
-    sizes = {"can": (0.122, "height")}
+    sizes = {"can": ("height", 0.122)}
     assert object_distance("can", 0, 100, 640, 90, sizes) < object_distance(
         "can", 0, 100, 640, 60, sizes
     )
@@ -106,3 +106,19 @@ def test_wider_fov_means_closer():
 def test_detections_carry_distance(can_frame):
     dets = make([(20, 20, 40, 60, 0.9, 0)]).detect(can_frame, "can")
     assert dets[0].distance_m is not None and dets[0].distance_m > 0
+
+
+def test_phone_distance_only_when_facing_camera():
+    from vision.yolo.runtime.detector import focal_px, object_distance
+
+    phone = {"cell phone": ("flat", 0.1634, 0.078)}  # 2.09:1
+    f = focal_px(1920, 48.5)
+    # Standing in portrait, facing the camera: 100 x 209 px box
+    upright = object_distance("cell phone", 100, 209, 1920, 48.5, phone)
+    assert upright == pytest.approx(f * 0.1634 / 209)
+    # Landscape facing the camera works too
+    assert object_distance("cell phone", 209, 100, 1920, 48.5, phone) == pytest.approx(upright)
+    # Lying flat, seen at an angle (long side squashed): no distance
+    assert object_distance("cell phone", 100, 110, 1920, 48.5, phone) is None
+    # Hand hides the bottom half (like holding it): no distance
+    assert object_distance("cell phone", 100, 105, 1920, 48.5, phone) is None
