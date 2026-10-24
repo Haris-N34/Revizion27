@@ -1,4 +1,5 @@
 """python -m app.main [--target can] [--mock-band] [--video FILE] [--no-voice] [--no-window]
+                   [--say-directions auto/on/off]
 
 Live view: target box, hand skeleton, fingertip-to-target line and band command.
 SPACE: ask out loud ("where is the can?").  r: rescan.  q / Esc: quit.
@@ -17,6 +18,7 @@ from app import voice_out
 from app.debug_view import render
 from app.fakes import FakeHandTracker, PrintBand, fake_compute
 from app.loop import Guide, State
+from app.narrator import Narrator
 from app.voice_in import Listener, extract_target
 from shared.config import load_config
 from vision.yolo.runtime.detector import ObjectDetector
@@ -55,9 +57,10 @@ def build(config: dict, mock_band: bool) -> SimpleNamespace:
     try:
         from hardware.host.band import Band, MockBand
 
-        band = MockBand(config) if mock_band or not config.get("serial_port") else Band(config)
+        real_band = not mock_band and bool(config.get("serial_port"))
+        band = Band(config) if real_band else MockBand(config)
     except ImportError:
-        band = PrintBand(config)
+        band, real_band = PrintBand(config), False
         fakes.append("PrintBand")
     try:
         from vision.yolo.model.classes import SUPPORTED, normalize
@@ -75,6 +78,7 @@ def build(config: dict, mock_band: bool) -> SimpleNamespace:
         compute=compute,
         stabilizer=stabilizer,
         band=band,
+        real_band=real_band,
         normalize=normalize,
         supported=list(SUPPORTED),
         fakes=fakes,
@@ -164,6 +168,10 @@ class App:
             stabilizer=p.stabilizer,
         )
         self.viewer = Viewer(show=not args.no_window)
+        # Spoken directions: on by default until a real band is connected.
+        mode = getattr(args, "say_directions", "auto")
+        narrate = mode == "on" or (mode == "auto" and not p.real_band)
+        self.narrator = Narrator(self.speaker) if narrate else None
         self.target: str | None = None
         self.pending: str | None = None  # target to scan for on the next frame
 
@@ -241,7 +249,11 @@ class App:
         g = self.guide
         if g.state == State.GUIDING:
             g.step(frame)
+            if self.narrator and g.state == State.GUIDING:
+                self.narrator.update(g.cmd)
         else:
+            if self.narrator:
+                self.narrator.reset()
             # Not guiding: keep showing the hand (and target, if any) live; no band output.
             if self.target:
                 found = g.detector.detect(frame, self.target)
@@ -270,6 +282,12 @@ def main() -> None:
     parser.add_argument("--mock-band", action="store_true", help="print band commands")
     parser.add_argument("--no-voice", action="store_true", help="keyboard in, printed speech")
     parser.add_argument("--no-window", action="store_true", help="no OpenCV window")
+    parser.add_argument(
+        "--say-directions",
+        choices=("auto", "on", "off"),
+        default="auto",
+        help="speak 'left', 'up'... while guiding (auto: only when no real band)",
+    )
     App(parser.parse_args()).run()
 
 
