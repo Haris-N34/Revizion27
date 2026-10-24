@@ -69,3 +69,12 @@ def test_weights_produce_supported_labels():
         pytest.skip(f"{path} not present")
     yolo = pytest.importorskip("ultralytics").YOLO
     assert list(yolo(str(path)).names.values()) == SUPPORTED
+
+
+def test_every_label_has_a_real_size():
+    from vision.yolo.model.classes import SIZES_M
+
+    assert set(SIZES_M) == set(SUPPORTED)
+    for metres, side in SIZES_M.values():
+        assert 0.02 < metres < 0.5
+        assert side in ("height", "longest")
