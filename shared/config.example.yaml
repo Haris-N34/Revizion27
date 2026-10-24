@@ -28,8 +28,15 @@ yolo:
 # Seconds to scan for the target before saying "I can't find a ..."
 scan_timeout_s: 5
 
+# Camera horizontal field of view in degrees; turns pixel sizes into metres.
+# Calibration value: distances read too big -> raise it; too small -> lower it.
+# Rough starting points: laptop webcam ~70, iPhone 1x ~70, iPhone 0.5x ~110
+camera_hfov_deg: 70
+
 guidance:
   # Fingertip within this many pixels of the target center = ARRIVED (grab)
   arrive_px: 40
   # Ignore offsets smaller than this on an axis (stops jitter between directions)
   dead_zone_px: 25
+  # Hand and object distances within this fraction count as the same depth (0.15 = 15%)
+  depth_tolerance: 0.15
