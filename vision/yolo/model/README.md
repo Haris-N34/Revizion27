@@ -7,7 +7,8 @@ class list. No training. "can" is not a COCO class, so stock YOLO can't find it.
    ~26 MB, gitignored). Loads offline afterwards; no CLIP download at runtime.
 2. Labels: `SUPPORTED` in `classes.py`; `normalize("coke") -> "can"`, unsupported -> `None`.
 3. Tests: `pytest vision/yolo/model`
-4. Add a class: append to `SUPPORTED` (+ aliases), re-run export. Fine-tune only if
+4. Add a class: append to `SUPPORTED` (+ aliases, + a `PROMPTS` phrase if the bare word
+   scores low, e.g. "can" -> "drink can"), re-run export. Fine-tune only if
    YOLO-World misses real objects.
 
 If export hits `CERTIFICATE_VERIFY_FAILED` (python.org Python on macOS), run

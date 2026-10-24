@@ -1,7 +1,8 @@
 """python -m vision.yolo.model.export
 
-Rebuilds the weights: YOLO-World (open-vocabulary, pretrained) with SUPPORTED
-baked in as its class list, saved to weights_path(config). No training.
+Rebuilds the weights: YOLO-World (open-vocabulary, pretrained) searching for
+PROMPTS text but labelling boxes with SUPPORTED, saved to weights_path(config).
+No training.
 """
 
 import argparse
@@ -9,7 +10,7 @@ import hashlib
 from pathlib import Path
 
 from shared.config import load_config
-from vision.yolo.model.classes import SUPPORTED
+from vision.yolo.model.classes import PROMPTS, SUPPORTED
 from vision.yolo.model.weights import weights_path
 
 BASE_WEIGHTS = "yolov8s-worldv2.pt"
@@ -34,7 +35,9 @@ def main() -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
 
     model = YOLO(args.base)
-    model.set_classes(SUPPORTED)
+    model.set_classes([PROMPTS.get(label, label) for label in SUPPORTED])
+    # Embeddings now match the prompts; output labels must be SUPPORTED.
+    model.model.names = dict(enumerate(SUPPORTED))
     model.save(str(out))
 
     names = list(YOLO(str(out)).names.values())

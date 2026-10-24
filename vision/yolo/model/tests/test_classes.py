@@ -1,7 +1,7 @@
 import pytest
 
 from shared.config import DEFAULTS, REPO_ROOT
-from vision.yolo.model.classes import ALIASES, SUPPORTED, normalize
+from vision.yolo.model.classes import ALIASES, PROMPTS, SUPPORTED, normalize
 from vision.yolo.model.weights import weights_path
 
 
@@ -45,6 +45,10 @@ def test_supported_is_lowercase_and_unique():
 
 def test_aliases_point_at_supported_labels():
     assert set(ALIASES.values()) <= set(SUPPORTED)
+
+
+def test_prompts_are_for_supported_labels():
+    assert set(PROMPTS) <= set(SUPPORTED)
 
 
 def test_weights_path_relative_to_repo_root():

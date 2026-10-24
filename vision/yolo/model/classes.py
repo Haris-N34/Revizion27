@@ -6,6 +6,10 @@ import re
 # the YOLO-World model, so model.names == SUPPORTED.
 SUPPORTED: list[str] = ["can", "bottle", "cup", "cell phone", "remote"]
 
+# Text YOLO-World actually searches for, when the bare label works poorly.
+# Bare "can" scored 0 on a real Coke can (it said "bottle" 0.54); "drink can" 0.94.
+PROMPTS: dict[str, str] = {"can": "drink can"}
+
 # Spoken phrase -> label. Keys are already cleaned by _clean().
 ALIASES: dict[str, str] = {
     # can
