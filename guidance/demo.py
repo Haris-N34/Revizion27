@@ -1,7 +1,8 @@
 """python -m guidance.demo
 
 No camera: the mouse is the fingertip. Left-click moves the can, right-click hides or
-shows the hand, m toggles mirror, q / Esc quits. Shows raw compute() and the
+shows the hand, w / s move the hand deeper / shallower (can is at 60 cm), d toggles
+depth on/off, m toggles mirror, q / Esc quits. Shows raw compute() and the
 Stabilizer output, and prints each change of the stabilized command.
 """
 
@@ -21,6 +22,8 @@ WINDOW = "octaby guidance"
 def main() -> None:
     config = load_config()
     state = {"can": (W * 0.65, H * 0.45), "tip": (W * 0.2, H * 0.8), "hand": True}
+    depth = {"on": True, "hand_m": 0.30}
+    CAN_M = 0.60
 
     def on_mouse(event, x, y, flags, param):
         if event == cv2.EVENT_MOUSEMOVE:
@@ -38,10 +41,22 @@ def main() -> None:
     while True:
         cx, cy = state["can"]
         det = Detection(
-            "can", 0.9, cx - CAN_W / 2, cy - CAN_H / 2, cx + CAN_W / 2, cy + CAN_H / 2, 0
+            "can",
+            0.9,
+            cx - CAN_W / 2,
+            cy - CAN_H / 2,
+            cx + CAN_W / 2,
+            cy + CAN_H / 2,
+            0,
+            distance_m=CAN_M if depth["on"] else None,
         )
         tx, ty = state["tip"]
-        hand = HandPosition(tx, ty, tx, ty + 60, "Right", frame_id) if state["hand"] else None
+        hand_m = depth["hand_m"] if depth["on"] else None
+        hand = (
+            HandPosition(tx, ty, tx, ty + 60, "Right", frame_id, distance_m=hand_m)
+            if state["hand"]
+            else None
+        )
         raw = compute(det, hand, (H, W, 3), config)
         cmd = stabilizer.update(raw)
         if cmd.direction != last:
@@ -59,7 +74,10 @@ def main() -> None:
             f"raw:    {raw.direction.name} ({raw.direction.value},{raw.intensity})",
             f"stable: {cmd.direction.name} ({cmd.direction.value},{cmd.intensity})",
             f"distance {cmd.distance_px:.0f}px   mirror={bool(config.get('mirror'))}",
-            "mouse: fingertip  L-click: move can  R-click: hide hand  m: mirror  q: quit",
+            f"depth: can {CAN_M * 100:.0f} cm, hand {depth['hand_m'] * 100:.0f} cm"
+            if depth["on"]
+            else "depth: off (2D only)",
+            "mouse: tip  L-click: can  R-click: hide hand  w/s: depth  d: depth on/off  m: mirror",
         ]
         for i, text in enumerate(lines):
             cv2.putText(
@@ -69,6 +87,12 @@ def main() -> None:
         key = cv2.waitKey(30) & 0xFF
         if key in (ord("q"), 27):
             break
+        if key == ord("w"):
+            depth["hand_m"] = min(1.5, depth["hand_m"] + 0.05)
+        if key == ord("s"):
+            depth["hand_m"] = max(0.05, depth["hand_m"] - 0.05)
+        if key == ord("d"):
+            depth["on"] = not depth["on"]
         if key == ord("m"):
             config["mirror"] = not config.get("mirror")
         frame_id += 1

@@ -87,3 +87,54 @@ def test_resolution_independent():
 
 def test_missing_config_keys_use_defaults():
     assert compute(CAN, hand(100, 240), SHAPE, {}).direction == Direction.RIGHT
+
+
+# --- depth -----------------------------------------------------------------
+CAN_AT = Detection("can", 0.9, 290, 190, 350, 290, 0, distance_m=0.60)
+
+
+def hand_at(x, y, metres):
+    return HandPosition(x, y, x, y + 60, "Right", 0, distance_m=metres)
+
+
+@pytest.mark.parametrize(
+    "hand_m, expected",
+    [
+        (0.30, Direction.FORWARD),  # hand halfway: reach deeper
+        (0.50, Direction.FORWARD),  # 17% short: still forward
+        (0.55, Direction.ARRIVED),  # within 15%
+        (0.60, Direction.ARRIVED),
+        (0.68, Direction.ARRIVED),
+        (0.80, Direction.BACK),  # past the object
+    ],
+)
+def test_depth_when_lined_up(hand_m, expected):
+    assert compute(CAN_AT, hand_at(320, 240, hand_m), SHAPE, CFG).direction == expected
+
+
+def test_mirror_swaps_forward_back():
+    mirrored = dict(CFG, mirror=True)
+    assert compute(CAN_AT, hand_at(320, 240, 0.30), SHAPE, mirrored).direction == Direction.BACK
+    assert compute(CAN_AT, hand_at(320, 240, 0.90), SHAPE, mirrored).direction == Direction.FORWARD
+
+
+def test_line_up_in_2d_before_depth():
+    # Far off to the side and much too close: fix the side first.
+    assert compute(CAN_AT, hand_at(100, 240, 0.30), SHAPE, CFG).direction == Direction.RIGHT
+
+
+def test_forward_intensity_grows_with_depth_gap():
+    near = compute(CAN_AT, hand_at(320, 240, 0.48), SHAPE, CFG)
+    far = compute(CAN_AT, hand_at(320, 240, 0.20), SHAPE, CFG)
+    assert near.direction == far.direction == Direction.FORWARD
+    assert MIN_INTENSITY <= near.intensity < far.intensity <= MAX_INTENSITY
+
+
+def test_depth_tolerance_from_config():
+    loose = {"guidance": {"depth_tolerance": 0.6}}
+    assert compute(CAN_AT, hand_at(320, 240, 0.30), SHAPE, loose).direction == Direction.ARRIVED
+
+
+def test_unknown_distance_falls_back_to_2d_arrival():
+    assert compute(CAN, hand_at(320, 240, 0.30), SHAPE, CFG).direction == Direction.ARRIVED
+    assert compute(CAN_AT, hand(320, 240), SHAPE, CFG).direction == Direction.ARRIVED

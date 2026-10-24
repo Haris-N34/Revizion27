@@ -1,5 +1,6 @@
 """HandTracker: MediaPipe hand landmarks -> HandPosition (index fingertip + wrist)."""
 
+import math
 import ssl
 import time
 import urllib.request
@@ -18,6 +19,10 @@ MODEL_URL = (
 DEFAULT_MODEL = "models/hand_landmarker.task"  # gitignored, downloaded on first use
 MIN_CONFIDENCE = 0.5
 INDEX_TIP, WRIST = 8, 0
+# Rigid palm bones (landmark pairs) used for distance: wrist-index MCP, wrist-pinky MCP,
+# index MCP-pinky MCP, wrist-middle MCP. Fingers bend, so they're left out.
+PALM_BONES = [(0, 5), (0, 17), (5, 17), (0, 9)]
+DEFAULT_HFOV_DEG = 70.0
 
 
 def model_path(config: dict) -> Path:
@@ -57,6 +62,7 @@ def _create_landmarker(path: Path):
 class HandTracker:
     def __init__(self, config: dict, landmarker=None):
         self.mirror = bool(config.get("mirror", False))
+        self.hfov_deg = float(config.get("camera_hfov_deg", DEFAULT_HFOV_DEG))
         self._landmarker = landmarker or _create_landmarker(model_path(config))
         self._frame_id = 0
         self._last_ts = -1
@@ -97,7 +103,26 @@ class HandTracker:
             wrist_y=points[WRIST][1],
             handedness=handedness,
             frame_id=frame_id,
+            distance_m=self._distance(result, points, width),
         )
+
+    def _distance(self, result, points, width: int) -> float | None:
+        """Camera-to-hand distance in metres: palm bone length (MediaPipe world
+        landmarks, metres) vs. its length in pixels. Turning the palm only makes a bone
+        look shorter (farther), so the bone giving the smallest distance is the best."""
+        world = getattr(result, "hand_world_landmarks", None)
+        if not world:
+            return None
+        world = [(lm.x, lm.y, lm.z) for lm in world[0]]
+        focal = (width / 2) / math.tan(math.radians(self.hfov_deg) / 2)
+        best = None
+        for a, b in PALM_BONES:
+            px = math.dist(points[a], points[b])
+            real = math.dist(world[a], world[b])
+            if px > 1 and real > 0:
+                z = focal * real / px
+                best = z if best is None else min(best, z)
+        return best
 
     def close(self) -> None:
         if self._landmarker is not None:
