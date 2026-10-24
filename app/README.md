@@ -3,6 +3,7 @@
 Voice-driven loop + live debug view: ask for an object, it scans, then guides your hand.
 
 1. `python -m app.main --mock-band` (webcam; starts listening). `--target can` skips asking,
+   `--say-directions on/off` (default: spoken "left/up..." until a real band is connected),
    `--no-voice` types instead of talking, `--video FILE`, `--no-window`.
 2. Keys: SPACE ask ("where is the can?"), r rescan, q quit.
 3. Tests (no camera, mic or internet): `pytest app`
