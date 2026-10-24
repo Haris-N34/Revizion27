@@ -22,15 +22,17 @@ YOLO and MediaPipe run on the laptop. The Arduino only drives motors.
 
 ## Team, folders, branches
 
+One branch per person. Each branch edits only its owner's folders.
+
 | Area | Owner | Folder | Branch |
 | --- | --- | --- | --- |
-| Hardware (Arduino firmware, motors, band, Python serial driver) | Azfar | `hardware/` | `feat/hardware` |
-| YOLO model: classes, weights, training, export | Rizwan | `vision/yolo/model/` | `feat/yolo-rizwan` |
-| YOLO runtime: detector + scan with timeout | Harim | `vision/yolo/runtime/` | `feat/yolo-harim` |
-| UI app: voice in, speech out, camera, main loop, debug window | Harim | `app/` | `feat/app` |
-| MediaPipe hand tracking | UNASSIGNED | `vision/hands/` | `feat/hands` |
-| Guidance math | UNASSIGNED | `guidance/` | `feat/guidance` |
-| Shared interfaces, config, repo setup | Whole team | `shared/` + root files | `feat/shared` |
+| Hardware (Arduino firmware, motors, band, Python serial driver) | Azfar | `hardware/` | `feat/azfar` |
+| YOLO model: classes, weights, training, export | Rizwan | `vision/yolo/model/` | `feat/rizwan` |
+| YOLO runtime: detector + scan with timeout | Harim | `vision/yolo/runtime/` | `feat/harim` |
+| UI app: voice in, speech out, camera, main loop, debug window | Harim | `app/` | `feat/harim` |
+| MediaPipe hand tracking | Haris | `vision/hands/` | `feat/haris` |
+| Guidance math | Haris | `guidance/` | `feat/haris` |
+| Shared interfaces, config, repo setup | Whole team | `shared/` + root files | `main` only (see rule 3) |
 
 The two YOLO owners are split by subfolder so their branches never edit the
 same file. If the team changes this split, update this table on `main` first.
@@ -42,12 +44,14 @@ branch, and merges everything at the end. Your job is to keep that merge
 painless.
 
 1. **Check where you are.** Run `git branch --show-current` before editing.
-   Only edit files inside the folder(s) your branch owns (table above).
+   Only edit files inside the folder(s) your branch's owner owns (table above).
 2. **Never edit another area's files**, even to "fix" something. If you need a
    change elsewhere, stop and tell the human, who will ask the owner.
-3. **Never edit `shared/` or root files from a feature branch.** Changes to
-   contracts go through a tiny PR to `main` that the whole team agrees on.
-   After it merges, everyone runs `git pull origin main` into their branch.
+3. **Never edit `shared/` or root files from your personal branch.** For a
+   contract/config/root change, make a short-lived branch off `main` (e.g.
+   `shared-add-key`), open a tiny PR the whole team agrees on, and delete the
+   branch after it merges. Then everyone runs `git pull origin main` into
+   their own branch.
 4. **Code against the contracts in `shared/contracts.py`, not against another
    person's implementation.** Their code may not exist yet on your machine.
 5. **Every module must run without the others.** Provide a mock or fake for
@@ -64,10 +68,11 @@ painless.
 9. **Do not change dependency versions** in another area's requirements file.
    Add your own deps only to your folder's `requirements.txt`.
 10. **Small, frequent commits** with a prefix: `[hardware]`, `[yolo]`,
-    `[app]`, `[hands]`, `[guidance]`, `[shared]`. Push your branch often so
+    `[app]`, `[hands]`, `[guidance]`, `[shared]` (by folder, not by person).
+    Push your branch often so
     work is never only on one laptop.
 11. **Keep `main` working.** Never commit directly to `main` except the agreed
-    `feat/shared` setup and contract PRs.
+    shared PRs from rule 3.
 
 ## Shared contracts (`shared/contracts.py`)
 
@@ -136,8 +141,8 @@ fixed; internals are up to the owner.
 | `vision/yolo/runtime/scan.py` | `scan(frames: Iterable[ndarray], detector, target: str, timeout_s: float) -> Detection \| None` | Harim |
 | `vision/yolo/model/classes.py` | `normalize(spoken: str) -> str \| None` (maps "coke", "soda can" to "can"; None if unsupported) and `SUPPORTED: list[str]` | Rizwan |
 | `vision/yolo/model/weights.py` | `weights_path(config) -> Path` (where the agreed weights live locally) | Rizwan |
-| `vision/hands/tracker.py` | `class HandTracker(config)` with `track(frame) -> HandPosition \| None` | Unassigned |
-| `guidance/compute.py` | `compute(det: Detection, hand: HandPosition \| None, frame_shape, config) -> GuidanceCommand` (pure function, no I/O) | Unassigned |
+| `vision/hands/tracker.py` | `class HandTracker(config)` with `track(frame) -> HandPosition \| None` | Haris |
+| `guidance/compute.py` | `compute(det: Detection, hand: HandPosition \| None, frame_shape, config) -> GuidanceCommand` (pure function, no I/O) | Haris |
 | `hardware/host/band.py` | `class Band(config)` with `send(cmd: GuidanceCommand)` and `close()`; plus `class MockBand` that prints commands | Azfar |
 | `app/main.py` | `python -m app.main` runs the full loop; `--mock-band`, `--video <file>` flags | Harim |
 
@@ -165,7 +170,7 @@ frames as arguments; their own `demo.py` may open a camera for testing.
   `/dev/tty.usbmodem1101`), `baud`, `wrist` (`left`/`right`), `yolo.weights`,
   `yolo.confidence` (default 0.5), `yolo.confirm_frames` (default 3),
   `scan_timeout_s` (default 5), `guidance.arrive_px`, `guidance.dead_zone_px`.
-- New keys: add them to `config.example.yaml` via a `feat/shared` PR, and give
+- New keys: add them to `config.example.yaml` via a shared PR (rule 3), and give
   every new key a default in code so older configs still run.
 
 ## Environment
@@ -186,8 +191,8 @@ frames as arguments; their own `demo.py` may open a camera for testing.
 2. **During the build:** work only on your branch. Pull `main` into your
    branch whenever a contract PR lands. Push at least every hour.
 3. **Final merge**, in this order, into an `integration` branch:
-   `feat/hardware`, `feat/yolo-rizwan`, `feat/yolo-harim`, `feat/hands`,
-   `feat/guidance`, `feat/app`. After each merge, run `pytest` and
+   `feat/azfar`, `feat/rizwan`, `feat/haris`, `feat/harim`. After each
+   merge, run `pytest` and
    `python -m app.main --mock-band --video shared/fixtures/demo.mp4`.
 4. When `integration` works with the real band, merge it into `main`.
 

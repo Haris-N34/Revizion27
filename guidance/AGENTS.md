@@ -1,7 +1,7 @@
 # AGENTS.md: guidance/
 
-Owner: **UNASSIGNED** (assign at kickoff, then update the root table).
-Branch: `feat/guidance`. Read the root `AGENTS.md` first.
+Owner: **Haris**.
+Branch: `feat/haris`. Read the root `AGENTS.md` first.
 
 ```
 guidance/
@@ -37,7 +37,7 @@ Defaults if keys are missing: `arrive_px = 40`, `dead_zone_px = 25`.
 With one webcam this is 2D: it guides the hand across the image, not toward
 or away from the camera. That is fine for objects on a table filmed from
 above or in front. Depth is a stretch goal and would need a new contract
-field, which means a `feat/shared` PR.
+field, which means a shared PR (root `AGENTS.md`, rule 3).
 
 ## Tests
 
