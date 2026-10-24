@@ -11,6 +11,8 @@ from shared.contracts import Detection
 # YOLO-World takes custom class names, so it can find "can" (not a COCO class).
 FALLBACK_WEIGHTS = "yolov8s-worldv2.pt"
 FALLBACK_CLASSES = ["can", "bottle", "cup", "cell phone", "remote"]
+# Search text per label; bare "can" misses real cans, "drink can" finds them.
+FALLBACK_PROMPTS = {"can": "drink can"}
 IMGSZ = 640
 
 
@@ -22,12 +24,17 @@ def _weights_path(config: dict) -> Path:
     return Path(weights_path(config))
 
 
-def _supported() -> list[str]:
+def _supported() -> tuple[list[str], dict[str, str]]:
+    """(labels, label -> search text) from model/, or the fallback lists."""
     try:
         from vision.yolo.model.classes import SUPPORTED
     except ImportError:
-        return list(FALLBACK_CLASSES)
-    return list(SUPPORTED)
+        return list(FALLBACK_CLASSES), dict(FALLBACK_PROMPTS)
+    try:
+        from vision.yolo.model.classes import PROMPTS
+    except ImportError:
+        PROMPTS = FALLBACK_PROMPTS
+    return list(SUPPORTED), dict(PROMPTS)
 
 
 def _device() -> str:
@@ -60,7 +67,9 @@ def load_model(config: dict):
     else:
         print(f"[detector] {path} not found, falling back to {FALLBACK_WEIGHTS}")
         model = YOLO(FALLBACK_WEIGHTS)
-        model.set_classes(_supported())
+        labels, prompts = _supported()
+        model.set_classes([prompts.get(label, label) for label in labels])
+        model.model.names = dict(enumerate(labels))
     return model
 
 
