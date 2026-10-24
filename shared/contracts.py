@@ -13,6 +13,7 @@ class Detection:
     x2: float
     y2: float
     frame_id: int
+    distance_m: float | None = None  # camera -> object, metres; None if unknown
 
     @property
     def center(self) -> tuple[float, float]:
@@ -27,6 +28,7 @@ class HandPosition:
     wrist_y: float
     handedness: str  # "Left" or "Right" as seen by the user
     frame_id: int
+    distance_m: float | None = None  # camera -> hand, metres; None if unknown
 
 
 class Direction(str, Enum):
@@ -38,6 +40,8 @@ class Direction(str, Enum):
     UP_RIGHT = "UR"
     DOWN_LEFT = "DL"
     DOWN_RIGHT = "DR"
+    FORWARD = "F"  # aligned; move the hand deeper into the scene (away from the camera)
+    BACK = "B"  # aligned; hand went past the object, pull back toward the camera
     ARRIVED = "G"  # grab now
     LOST = "X"  # hand not visible
     STOP = "S"  # all motors off
