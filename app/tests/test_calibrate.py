@@ -45,3 +45,26 @@ def test_taller_reference_same_pixels_means_wider_fov():
     # Same px height and distance: a taller real object implies a wider field of view.
     can, phone = REFERENCES["can"], REFERENCES["phone"]
     assert hfov_from_sample(0.5, 200, 1280, phone) > hfov_from_sample(0.5, 200, 1280, can)
+
+
+def test_distance_entry_typing():
+    from app.calibrate import DistanceEntry
+
+    e = DistanceEntry()
+    e.start(240.0)
+    for c in "45.x5":  # 'x' is ignored
+        assert e.key(ord(c)) is None
+    assert e.text == "45.5"
+    e.key(127)  # backspace
+    assert e.text == "45."
+    assert e.key(13) == 45.0 and not e.active and e.height == 240.0
+
+
+def test_distance_entry_rejects_empty_and_cancels():
+    from app.calibrate import DistanceEntry
+
+    e = DistanceEntry()
+    e.start(100.0)
+    assert e.key(13) is None and e.active  # empty: stay in entry
+    e.key(27)  # Esc
+    assert not e.active

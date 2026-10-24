@@ -7,7 +7,7 @@ distances. Needs an object of known height and a tape measure. Once per camera.
 1. Stand the object upright, fully in view, facing the camera (prop a phone against
    something; don't hold it, the hand hides part of it).
 2. Measure from the camera lens to the FRONT of the object.
-3. Click the window, press SPACE, type that distance in cm in the terminal, Enter.
+3. In the window: press SPACE, type the distance in cm, press Enter (Esc cancels).
    Do it at 2-3 distances (e.g. 40, 60, 80 cm); the result is the median.
 4. Press w to save to config.yaml, q to quit.
 The window shows the estimated distance with the current value, to check against the tape.
@@ -77,7 +77,41 @@ def save_hfov(hfov_deg: float, path: Path = CONFIG_PATH) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def _draw(frame, ref: Reference, heights, samples, hfov_now: float, hfov_new) -> None:
+class DistanceEntry:
+    """Typing a distance inside the OpenCV window (no terminal input, which would freeze
+    the window and give macOS's spinning wheel). Feed it waitKey() codes."""
+
+    ENTER, BACKSPACE, ESC = (10, 13), (8, 127), 27
+
+    def __init__(self):
+        self.active = False
+        self.text = ""
+        self.height: float | None = None  # object height (px) captured at SPACE
+
+    def start(self, height: float) -> None:
+        self.active, self.text, self.height = True, "", height
+
+    def key(self, code: int) -> float | None:
+        """Returns the distance in cm on Enter (if valid); None otherwise."""
+        if code in self.ENTER:
+            try:
+                cm = float(self.text)
+            except ValueError:
+                return None
+            if cm <= 0:
+                return None
+            self.active = False
+            return cm
+        if code == self.ESC:
+            self.active = False
+        elif code in self.BACKSPACE:
+            self.text = self.text[:-1]
+        elif chr(code) in "0123456789." and len(self.text) < 6:
+            self.text += chr(code)
+        return None
+
+
+def _draw(frame, ref: Reference, heights, samples, hfov_now, hfov_new, entry, message) -> None:
     lines = []
     if heights:
         h = statistics.median(heights)
@@ -88,7 +122,12 @@ def _draw(frame, ref: Reference, heights, samples, hfov_now: float, hfov_new) ->
     lines.append(
         f"samples: {len(samples)}" + (f"   new fov: {hfov_new:.1f} deg" if hfov_new else "")
     )
-    lines.append("SPACE: add sample   w: save   q: quit")
+    if entry.active:
+        lines.append(f"lens -> front distance: {entry.text}_ cm   (Enter: OK, Esc: cancel)")
+    else:
+        lines.append("SPACE: add sample   w: save   q: quit")
+    if message:
+        lines.append(message)
     for i, text in enumerate(lines):
         org = (10, 30 + 32 * i)
         cv2.putText(frame, text, org, cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 5)
@@ -96,15 +135,27 @@ def _draw(frame, ref: Reference, heights, samples, hfov_now: float, hfov_new) ->
 
 
 def run_live(config: dict, ref: Reference, video: str | None) -> None:
-    detector = ObjectDetector(config)
     hfov_now = float(config.get("camera_hfov_deg", 70.0))
     cap = cv2.VideoCapture(video if video else camera_source(config))
     if not cap.isOpened():
         raise SystemExit("Could not open the camera")
+    print("Loading the model (a few seconds)...")
+    detector = ObjectDetector(config)
+    ok, frame = cap.read()
+    if ok:
+        detector.detect(frame, ref.label)  # warm-up: the first run is slow
+    print(f"Calibrating with: {ref.label}, {ref.height_m * 1000:.1f} mm tall")
     heights: deque[float] = deque(maxlen=15)  # median of recent frames: steadier than one
     samples: list[float] = []
     hfov_new = None
-    print(f"Calibrating with: {ref.label}, {ref.height_m * 1000:.1f} mm tall")
+    entry = DistanceEntry()
+    message = ""
+
+    def say(text: str) -> None:
+        nonlocal message
+        message = text
+        print(text)
+
     try:
         while True:
             ok, frame = cap.read()
@@ -117,23 +168,34 @@ def run_live(config: dict, ref: Reference, video: str | None) -> None:
                 cv2.rectangle(frame, (int(d.x1), int(d.y1)), (int(d.x2), int(d.y2)), (0, 255, 0), 2)
             else:
                 heights.clear()
-            _draw(frame, ref, heights, samples, hfov_new or hfov_now, hfov_new)
+            _draw(frame, ref, heights, samples, hfov_new or hfov_now, hfov_new, entry, message)
             cv2.imshow(WINDOW, frame)
             key = cv2.waitKey(1) & 0xFF
+            if key == 255:
+                continue
+            if entry.active:
+                cm = entry.key(key)
+                if cm is not None:
+                    samples.append(hfov_from_sample(cm / 100, entry.height, frame.shape[1], ref))
+                    hfov_new = statistics.median(samples)
+                    say(
+                        f"sample {len(samples)} at {cm:.0f} cm: {samples[-1]:.1f} deg"
+                        f" -> using {hfov_new:.1f} deg"
+                    )
+                continue
             if key in (ord("q"), 27):
                 break
             if key == ord(" "):
                 if len(heights) < 5:
-                    print(f"{ref.label} not seen steadily yet; hold still and try again.")
-                    continue
-                height = statistics.median(heights)
-                cm = float(input(f"{height:.0f}px tall. Distance lens -> front (cm): "))
-                samples.append(hfov_from_sample(cm / 100, height, frame.shape[1], ref))
-                hfov_new = statistics.median(samples)
-                print(f"sample {len(samples)}: {samples[-1]:.1f} deg -> using {hfov_new:.1f} deg")
-            if key == ord("w") and hfov_new:
-                save_hfov(hfov_new)
-                print(f"Saved camera_hfov_deg: {hfov_new:.1f} to {CONFIG_PATH.name}")
+                    say(f"{ref.label} not seen steadily yet: hold still, try again")
+                else:
+                    entry.start(statistics.median(heights))
+            elif key == ord("w"):
+                if hfov_new:
+                    save_hfov(hfov_new)
+                    say(f"Saved camera_hfov_deg: {hfov_new:.1f} to {CONFIG_PATH.name}")
+                else:
+                    say("No samples yet: press SPACE first")
     finally:
         cap.release()
         cv2.destroyAllWindows()
