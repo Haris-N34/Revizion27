@@ -1,1 +1,3 @@
-# guidance dependencies (owner adds them)
+# compute.py and stabilize.py use only the standard library; demo.py needs these
+opencv-python>=4.9
+numpy

@@ -32,8 +32,12 @@ class Guide:
         band,
         say: Callable[[str], None] = voice_out.speak,
         clock: Callable[[], float] = time.monotonic,
+        stabilizer=None,
     ):
+        """`stabilizer`: optional object with update(cmd) -> cmd and reset()
+        (guidance.stabilize.Stabilizer); smooths commands between compute and band."""
         self.config = config
+        self.stabilizer = stabilizer
         self.detector = detector
         self.tracker = tracker
         self.compute = compute
@@ -55,6 +59,8 @@ class Guide:
         """
         self.target, self.det, self.hand, self.cmd = target, None, None, None
         self._lost_since, self._warned_lost = None, False
+        if self.stabilizer is not None:
+            self.stabilizer.reset()
         self.state = State.SCANNING
         self.say(voice_out.LOOKING.format(target))
         timeout = float(self.config.get("scan_timeout_s", 5))
@@ -75,6 +81,8 @@ class Guide:
             self.det = found[0]  # else keep the last known box
         self.hand = self.tracker.track(frame)
         self.cmd = self.compute(self.det, self.hand, frame.shape, self.config)
+        if self.stabilizer is not None:
+            self.cmd = self.stabilizer.update(self.cmd)
         self.band.send(self.cmd)
         self._check_lost()
         if self.cmd.direction == Direction.ARRIVED:

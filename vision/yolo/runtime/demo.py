@@ -73,7 +73,10 @@ def main() -> None:
 
     config = load_config()
     timeout = args.timeout if args.timeout is not None else float(config["scan_timeout_s"])
-    source = args.video if args.video else int(config["camera_index"])
+    cam = config["camera_index"]  # device number, or a stream URL (iPhone webcam app)
+    if not (isinstance(cam, str) and not cam.strip().isdigit()):
+        cam = int(cam)
+    source = args.video if args.video else cam
     cap = cv2.VideoCapture(source)
     if not cap.isOpened():
         raise SystemExit(f"Could not open {source!r}")

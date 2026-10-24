@@ -43,6 +43,13 @@ def build(config: dict, mock_band: bool) -> SimpleNamespace:
         compute = fake_compute
         fakes.append("fake_compute")
     try:
+        from guidance.stabilize import Stabilizer
+
+        stabilizer = Stabilizer(config)
+    except ImportError:
+        stabilizer = None
+        fakes.append("no stabilizer")
+    try:
         from hardware.host.band import Band, MockBand
 
         band = MockBand(config) if mock_band or not config.get("serial_port") else Band(config)
@@ -63,6 +70,7 @@ def build(config: dict, mock_band: bool) -> SimpleNamespace:
         detector=ObjectDetector(config),
         tracker=tracker,
         compute=compute,
+        stabilizer=stabilizer,
         band=band,
         normalize=normalize,
         supported=list(SUPPORTED),
@@ -111,6 +119,15 @@ class ScanView:
         return dets
 
 
+def camera_source(config: dict) -> int | str:
+    """camera_index as a device number (webcam, iPhone via Continuity Camera) or a
+    stream URL (e.g. an iPhone webcam app's http:// / rtsp:// address)."""
+    value = config.get("camera_index", 0)
+    if isinstance(value, str) and not value.strip().isdigit():
+        return value.strip()
+    return int(value)
+
+
 def read_frames(cap):
     while True:
         ok, frame = cap.read()
@@ -132,7 +149,15 @@ class App:
             self.listener = Listener(hint_words=self.parts.supported)
             self.listener.preload()
         p = self.parts
-        self.guide = Guide(self.config, p.detector, p.tracker, p.compute, p.band, self.speaker.say)
+        self.guide = Guide(
+            self.config,
+            p.detector,
+            p.tracker,
+            p.compute,
+            p.band,
+            self.speaker.say,
+            stabilizer=p.stabilizer,
+        )
         self.viewer = Viewer(show=not args.no_window)
         self.target: str | None = None
         self.pending: str | None = None  # target to scan for on the next frame
@@ -177,7 +202,7 @@ class App:
             self.handle(a.target)
         else:
             self.ask()
-        source = a.video if a.video else int(self.config["camera_index"])
+        source = a.video if a.video else camera_source(self.config)
         cap = cv2.VideoCapture(source)
         if not cap.isOpened():
             raise SystemExit(f"Could not open {source!r}")

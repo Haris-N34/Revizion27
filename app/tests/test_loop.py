@@ -91,3 +91,40 @@ def test_stop_always_sends_stop_and_closes():
     guide.stop()
     assert band.sent[-1].direction == Direction.STOP
     assert band.closed
+
+
+class TwoFrameArrive:
+    """Minimal stabilizer: ARRIVED must be seen twice in a row."""
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.seen = 0
+        self.resets = getattr(self, "resets", 0) + 1
+
+    def update(self, cmd):
+        from dataclasses import replace
+
+        if cmd.direction == Direction.ARRIVED:
+            self.seen += 1
+            return cmd if self.seen >= 2 else replace(cmd, direction=Direction.UP)
+        self.seen = 0
+        return cmd
+
+
+def test_stabilizer_sits_between_compute_and_band():
+    said = []
+    stab = TwoFrameArrive()
+    band = PrintBand()
+    tracker = FakeHandTracker(speed=1000)  # jumps straight onto the can
+    guide = Guide(
+        DEFAULTS, FakeDetector(), tracker, fake_compute, band, said.append, stabilizer=stab
+    )
+    det = guide.find([FRAME] * 10, "can")
+    assert stab.resets == 2  # reset on each find()
+    tracker.goal = det.center
+    guide.step(FRAME)  # raw ARRIVED once -> held
+    assert guide.state == State.GUIDING
+    guide.step(FRAME)  # twice -> DONE
+    assert guide.state == State.DONE
