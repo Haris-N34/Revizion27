@@ -1,7 +1,7 @@
 # AGENTS.md: vision/hands/
 
-Owner: **UNASSIGNED** (assign at kickoff, then update the root table).
-Branch: `feat/hands`. Read the root `AGENTS.md` first.
+Owner: **Haris**.
+Branch: `feat/haris`. Read the root `AGENTS.md` first.
 
 ```
 vision/hands/

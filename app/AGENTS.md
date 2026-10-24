@@ -1,6 +1,6 @@
 # AGENTS.md: app/
 
-Owner: **Harim**. Branch: `feat/app`. Read the root `AGENTS.md` first.
+Owner: **Harim**. Branch: `feat/harim`. Read the root `AGENTS.md` first.
 
 The app is the only place the pieces meet. It owns the camera, the voice
 interface and the main loop. It must run end to end with mocks before any
