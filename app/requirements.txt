@@ -1,1 +1,2 @@
-# app dependencies (owner adds them)
+opencv-python>=4.9
+numpy
