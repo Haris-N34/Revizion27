@@ -14,6 +14,8 @@ from vision.yolo.runtime.scan import scan
 STOP = GuidanceCommand(Direction.STOP, 0, 0.0)
 HAND_LOST_AFTER_S = 2.0
 COVER_MARGIN = 0.15  # fingertip within the box grown by 15% counts as covering it
+MISSING_FRAMES = 8  # target unseen this many frames (not under the hand) = out of view
+TARGET_LOST_S = 6.0  # out of view this long: give up and scan again
 
 
 def _inside(x: float, y: float, d: Detection, margin: float = 0.0) -> bool:
@@ -50,11 +52,15 @@ class Guide:
         say: Callable[[str], None] = voice_out.speak,
         clock: Callable[[], float] = time.monotonic,
         stabilizer=None,
+        turn: Callable | None = None,
     ):
         """`stabilizer`: optional object with update(cmd) -> cmd and reset()
-        (guidance.stabilize.Stabilizer); smooths commands between compute and band."""
+        (guidance.stabilize.Stabilizer); smooths commands between compute and band.
+        `turn`: optional turn_toward(last_det, frame_shape, config) -> cmd | None
+        (guidance.compute.turn_toward); used when the target leaves the view."""
         self.config = config
         self.stabilizer = stabilizer
+        self.turn = turn
         self.detector = detector
         self.tracker = tracker
         self.compute = compute
@@ -68,6 +74,10 @@ class Guide:
         self.cmd: GuidanceCommand | None = None
         self._lost_since: float | None = None
         self._warned_lost = False
+        self.turning = False  # True while telling the user to turn toward the target
+        self.rescan_requested = False  # set when the target was lost; main.py rescans
+        self._missing = 0
+        self._missing_since: float | None = None
 
     def find(self, frames: Iterable[np.ndarray], target: str, detector=None) -> Detection | None:
         """SCANNING: returns the detection (state GUIDING) or None (state NOT_FOUND).
@@ -76,6 +86,8 @@ class Guide:
         """
         self.target, self.det, self.hand, self.cmd = target, None, None, None
         self._lost_since, self._warned_lost = None, False
+        self.turning, self.rescan_requested = False, False
+        self._missing, self._missing_since = 0, None
         if self.stabilizer is not None:
             self.stabilizer.reset()
         self.state = State.SCANNING
@@ -95,12 +107,24 @@ class Guide:
             return None
         found = self.detector.detect(frame, self.target)
         self.hand = self.tracker.track(frame)
+        self._track_missing(found)
         self.det = self._update_target(found)
-        self.cmd = self.compute(self.det, self.hand, frame.shape, self.config)
+
+        turn = None
+        if self._missing >= MISSING_FRAMES and self.turn is not None and self.det is not None:
+            turn = self.turn(self.det, frame.shape, self.config)
+        self.turning = turn is not None
+        self.cmd = turn or self.compute(self.det, self.hand, frame.shape, self.config)
         if self.stabilizer is not None:
             self.cmd = self.stabilizer.update(self.cmd)
         self.band.send(self.cmd)
         self._check_lost()
+
+        if self._missing_since is not None and self.clock() - self._missing_since > TARGET_LOST_S:
+            self.say(voice_out.LOST_TARGET.format(self.target))
+            self.band.send(STOP)
+            self.state, self.turning, self.rescan_requested = State.IDLE, False, True
+            return self.cmd
         if self.cmd.direction == Direction.ARRIVED:
             self.say(voice_out.ARRIVED)
             self.band.send(STOP)
@@ -128,6 +152,19 @@ class Guide:
             return replace(old, confidence=best.confidence, frame_id=best.frame_id)
         overlapping = [d for d in found if _iou(d, old) > 0]
         return max(overlapping, key=lambda d: _iou(d, old)) if overlapping else found[0]
+
+    def _track_missing(self, found: list[Detection]) -> None:
+        """Count frames the target is out of sight. Under the hand doesn't count."""
+        old, hand = self.det, self.hand
+        covered = (
+            old is not None and hand is not None and _inside(hand.x, hand.y, old, COVER_MARGIN)
+        )
+        if found or covered:
+            self._missing, self._missing_since = 0, None
+            return
+        self._missing += 1
+        if self._missing_since is None:
+            self._missing_since = self.clock()
 
     def _check_lost(self) -> None:
         if self.cmd.direction != Direction.LOST:

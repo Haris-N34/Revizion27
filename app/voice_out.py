@@ -17,6 +17,7 @@ NOT_FOUND = "I can't find a {}"
 CANT_LOOK = "I can't look for that yet"
 DIDNT_HEAR = "Sorry, I didn't catch that."
 HAND_LOST = "I can't see your hand."
+LOST_TARGET = "I lost the {}. Looking again."
 ARRIVED = "You're there"
 
 

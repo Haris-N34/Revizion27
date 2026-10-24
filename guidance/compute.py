@@ -104,3 +104,27 @@ def compute(
     scale = min(1.0, distance / full) if full else 1.0
     intensity = round(MIN_INTENSITY + (MAX_INTENSITY - MIN_INTENSITY) * scale)
     return GuidanceCommand(_DIRECTIONS[step], intensity, distance)
+
+
+EDGE_FRACTION = 0.08  # last seen within 8% of the frame width of a side = left that way
+TURN_INTENSITY = 200
+
+
+def turn_toward(last: Detection, frame_shape, config: dict) -> GuidanceCommand | None:
+    """The target left the view: turn toward the side it was last seen on.
+
+    Returns LEFT / RIGHT (from the user's point of view) if the last box touched the
+    left / right edge, or None if it vanished mid-frame (hidden or a missed detection).
+    """
+    width = frame_shape[1]
+    margin = EDGE_FRACTION * width
+    if last.x1 <= margin:
+        side = -1
+    elif last.x2 >= width - margin:
+        side = 1
+    else:
+        return None
+    if config.get("mirror"):
+        side = -side
+    direction = Direction.LEFT if side < 0 else Direction.RIGHT
+    return GuidanceCommand(direction, TURN_INTENSITY, 0.0)

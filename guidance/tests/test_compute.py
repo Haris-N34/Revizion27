@@ -138,3 +138,17 @@ def test_depth_tolerance_from_config():
 def test_unknown_distance_falls_back_to_2d_arrival():
     assert compute(CAN, hand_at(320, 240, 0.30), SHAPE, CFG).direction == Direction.ARRIVED
     assert compute(CAN_AT, hand(320, 240), SHAPE, CFG).direction == Direction.ARRIVED
+
+
+# --- out of view ---------------------------------------------------------------
+def test_turn_toward_edge_it_left_from():
+    from guidance.compute import turn_toward
+
+    left = Detection("can", 0.9, 0, 200, 40, 300, 0)
+    right = Detection("can", 0.9, 610, 200, 640, 300, 0)
+    middle = Detection("can", 0.9, 290, 190, 350, 290, 0)
+    assert turn_toward(left, SHAPE, CFG).direction == Direction.LEFT
+    assert turn_toward(right, SHAPE, CFG).direction == Direction.RIGHT
+    assert turn_toward(middle, SHAPE, CFG) is None
+    mirrored = dict(CFG, mirror=True)
+    assert turn_toward(left, SHAPE, mirrored).direction == Direction.RIGHT

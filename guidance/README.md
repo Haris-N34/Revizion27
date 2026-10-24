@@ -6,6 +6,7 @@ Hand distance (`HandPosition.distance_m`) comes from `vision/hands` palm size.
 
 1. Demo (no camera, mouse = fingertip): `python -m guidance.demo`
 2. Tests: `pytest guidance`
+`turn_toward(last_det, frame_shape, config)`: target left the view at an edge -> turn LEFT/RIGHT.
 
 Camera-independent: alignment uses the target box's size, intensity the frame size, so a
 webcam or iPhone (any lens/resolution) behaves the same. Set `mirror: true` only when

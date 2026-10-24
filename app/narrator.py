@@ -45,23 +45,27 @@ class Narrator:
         self.reset()
 
     def reset(self) -> None:
-        self._last_dir: Direction | None = None
+        self._last_dir: tuple[Direction, bool] | None = None
         self._last_time = float("-inf")
 
-    def update(self, cmd: GuidanceCommand | None) -> str | None:
-        """Call once per guiding frame; returns the word spoken, if any."""
+    def update(self, cmd: GuidanceCommand | None, turning: bool = False) -> str | None:
+        """Call once per guiding frame; returns the words spoken, if any.
+
+        `turning`: the target is out of view, so LEFT/RIGHT mean "turn left/right".
+        """
         if cmd is None or cmd.direction not in WORDS:
             # LOST / ARRIVED / STOP: remember it so the next direction counts as new.
-            self._last_dir = cmd.direction if cmd else None
+            self._last_dir = (cmd.direction, False) if cmd else None
             return None
         if self.speaker.busy():
             return None
         now = self.clock()
         since = now - self._last_time
-        changed = cmd.direction != self._last_dir
+        key = (cmd.direction, turning)
+        changed = key != self._last_dir
         if (changed and since >= self.min_gap_s) or since >= self.repeat_s:
-            word = WORDS[cmd.direction]
+            word = ("turn " if turning else "") + WORDS[cmd.direction]
             self.speaker.say(word)
-            self._last_dir, self._last_time = cmd.direction, now
+            self._last_dir, self._last_time = key, now
             return word
         return None

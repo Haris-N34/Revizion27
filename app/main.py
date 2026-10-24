@@ -43,9 +43,9 @@ def build(config: dict, mock_band: bool) -> SimpleNamespace:
         tracker = FakeHandTracker(config)
         fakes.append("FakeHandTracker")
     try:
-        from guidance.compute import compute
+        from guidance.compute import compute, turn_toward
     except ImportError:
-        compute = fake_compute
+        compute, turn_toward = fake_compute, None
         fakes.append("fake_compute")
     try:
         from guidance.stabilize import Stabilizer
@@ -76,6 +76,7 @@ def build(config: dict, mock_band: bool) -> SimpleNamespace:
         detector=ObjectDetector(config),
         tracker=tracker,
         compute=compute,
+        turn=turn_toward,
         stabilizer=stabilizer,
         band=band,
         real_band=real_band,
@@ -166,6 +167,7 @@ class App:
             p.band,
             self.speaker.say,
             stabilizer=p.stabilizer,
+            turn=p.turn,
         )
         self.viewer = Viewer(show=not args.no_window)
         # Spoken directions: on by default until a real band is connected.
@@ -203,7 +205,11 @@ class App:
         if self.listener and self.listener.state == "transcribing":
             return "thinking..."
         return {
-            State.GUIDING: f"guiding to {self.target}",
+            State.GUIDING: (
+                f"turn {self.guide.cmd.direction.name.lower()} to find {self.target}"
+                if self.guide.turning and self.guide.cmd
+                else f"guiding to {self.target}"
+            ),
             State.DONE: "ARRIVED - you're there",
             State.NOT_FOUND: f"NOT FOUND: {self.target}",
             State.IDLE: "press SPACE and ask",
@@ -250,7 +256,10 @@ class App:
         if g.state == State.GUIDING:
             g.step(frame)
             if self.narrator and g.state == State.GUIDING:
-                self.narrator.update(g.cmd)
+                self.narrator.update(g.cmd, turning=g.turning)
+            if g.rescan_requested:  # target left the view for too long
+                g.rescan_requested = False
+                self.pending = self.target
         else:
             if self.narrator:
                 self.narrator.reset()

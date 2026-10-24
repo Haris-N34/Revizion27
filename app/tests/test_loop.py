@@ -194,3 +194,83 @@ def test_follows_the_same_object_when_several_are_seen():
     tracker.pos, tracker.speed = (20, 460), 0  # hand far away
     guide.step(FRAME)
     assert guide.det.x1 == 104
+
+
+# --- target leaves the view ---------------------------------------------------
+def _edge_turn(last, frame_shape, config):
+    """Stand-in for guidance.compute.turn_toward: left edge -> LEFT, else None."""
+    from shared.contracts import GuidanceCommand
+
+    return GuidanceCommand(Direction.LEFT, 200, 0.0) if last.x1 <= 10 else None
+
+
+def _gone_setup(box):
+    from shared.contracts import Detection
+
+    said, clock = [], Clock()
+    tracker = FakeHandTracker(speed=0)
+    tracker.pos = (600.0, 450.0)  # hand far from the target, not covering it
+    band = PrintBand()
+    guide = Guide(
+        DEFAULTS, FakeDetector(), tracker, fake_compute, band, said.append, clock, turn=_edge_turn
+    )
+    guide.find([FRAME] * 10, "can")
+    guide.det = Detection("can", 0.9, *box, 0)
+    guide.detector.found_after = None  # target no longer visible
+    return guide, band, said, clock
+
+
+def test_turns_toward_edge_the_target_left_from():
+    from app.loop import MISSING_FRAMES
+
+    guide, _, _, _ = _gone_setup((0, 200, 40, 300))
+    for _ in range(MISSING_FRAMES - 1):
+        guide.step(FRAME)
+    assert not guide.turning
+    guide.step(FRAME)
+    assert guide.turning and guide.cmd.direction == Direction.LEFT
+
+
+def test_vanishing_mid_frame_is_not_a_turn():
+    guide, _, _, _ = _gone_setup((300, 200, 360, 300))
+    for _ in range(20):
+        guide.step(FRAME)
+    assert not guide.turning
+    assert guide.det.x1 == 300  # still guiding toward the last box
+
+
+def test_turning_stops_when_target_is_back():
+    from app.loop import MISSING_FRAMES
+
+    guide, _, _, _ = _gone_setup((0, 200, 40, 300))
+    for _ in range(MISSING_FRAMES):
+        guide.step(FRAME)
+    guide.detector.found_after = 0
+    guide.step(FRAME)
+    assert not guide.turning
+
+
+def test_lost_too_long_says_so_and_requests_rescan():
+    from app.loop import TARGET_LOST_S
+
+    guide, band, said, clock = _gone_setup((0, 200, 40, 300))
+    guide.step(FRAME)
+    clock.t = TARGET_LOST_S + 0.1
+    guide.step(FRAME)
+    assert said[-1] == "I lost the can. Looking again."
+    assert guide.rescan_requested and guide.state == State.IDLE
+    assert band.sent[-1].direction == Direction.STOP
+
+
+def test_hand_covering_target_never_counts_as_lost():
+    from app.loop import TARGET_LOST_S
+
+    guide, _, said, clock = _gone_setup((300, 200, 360, 300))
+    guide.tracker.pos = (330.0, 250.0)  # fingertip on the target; YOLO can't see it
+    guide.config = dict(DEFAULTS, guidance={"arrive_px": 0, "dead_zone_px": 0})
+    guide.compute = lambda det, hand, shape, cfg: fake_compute(det, None, shape, cfg)  # no arrive
+    for t in range(int(TARGET_LOST_S * 3)):
+        clock.t = t
+        guide.step(FRAME)
+    assert not guide.rescan_requested
+    assert "I lost the can. Looking again." not in said

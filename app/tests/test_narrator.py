@@ -92,3 +92,12 @@ def test_forward_and_back_are_spoken():
     n, speaker, clock = make()
     feed(n, clock, [(0.0, D.FORWARD), (2.0, D.BACK)])
     assert speaker.said == ["forward", "back"]
+
+
+def test_turning_says_turn():
+    n, speaker, clock = make()
+    clock.t = 0.0
+    n.update(cmd(D.LEFT), turning=True)
+    clock.t = 2.0
+    n.update(cmd(D.LEFT))  # back in view: plain "left" is a change
+    assert speaker.said == ["turn left", "left"]
