@@ -1,0 +1,110 @@
+"""ObjectDetector: run YOLO on one frame and return Detections for one target."""
+
+from pathlib import Path
+
+import numpy as np
+
+from shared.config import REPO_ROOT
+from shared.contracts import Detection
+
+# Used until Rizwan's model/ package is merged, or if the weights file is missing.
+# YOLO-World takes custom class names, so it can find "can" (not a COCO class).
+FALLBACK_WEIGHTS = "yolov8s-worldv2.pt"
+FALLBACK_CLASSES = ["can", "bottle", "cup", "cell phone", "remote"]
+IMGSZ = 640
+
+
+def _weights_path(config: dict) -> Path:
+    try:
+        from vision.yolo.model.weights import weights_path
+    except ImportError:
+        return REPO_ROOT / config["yolo"]["weights"]
+    return Path(weights_path(config))
+
+
+def _supported() -> list[str]:
+    try:
+        from vision.yolo.model.classes import SUPPORTED
+    except ImportError:
+        return list(FALLBACK_CLASSES)
+    return list(SUPPORTED)
+
+
+def _device() -> str:
+    import torch
+
+    if torch.cuda.is_available():
+        return "cuda:0"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
+def _np(x) -> np.ndarray:
+    """Tensor or array -> numpy array."""
+    if hasattr(x, "cpu"):
+        x = x.cpu()
+    if hasattr(x, "numpy"):
+        x = x.numpy()
+    return np.asarray(x)
+
+
+def load_model(config: dict):
+    """Load the agreed weights, or YOLO-World with the supported classes as a fallback."""
+    from ultralytics import YOLO
+
+    path = _weights_path(config)
+    if path.exists():
+        print(f"[detector] loading {path.name}")
+        model = YOLO(str(path))
+    else:
+        print(f"[detector] {path} not found, falling back to {FALLBACK_WEIGHTS}")
+        model = YOLO(FALLBACK_WEIGHTS)
+        model.set_classes(_supported())
+    return model
+
+
+class ObjectDetector:
+    def __init__(self, config: dict, model=None):
+        self.config = config
+        self.confidence = float(config["yolo"]["confidence"])
+        self.confirm_frames = int(config["yolo"]["confirm_frames"])
+        self.model = model if model is not None else load_model(config)
+        self.device = None if model is not None else _device()
+        self._frame_id = 0
+
+    def detect(self, frame: np.ndarray, target: str) -> list[Detection]:
+        """Boxes labelled `target` with confidence >= threshold, best first."""
+        frame_id = self._frame_id
+        self._frame_id += 1
+        target = target.strip().lower()
+
+        kwargs = {"conf": self.confidence, "imgsz": IMGSZ, "verbose": False}
+        if self.device:
+            kwargs["device"] = self.device
+        result = self.model.predict(frame, **kwargs)[0]
+
+        names = result.names
+        boxes = result.boxes
+        if boxes is None or len(boxes) == 0:
+            return []
+        xyxy, confs, classes = _np(boxes.xyxy), _np(boxes.conf), _np(boxes.cls)
+
+        found = []
+        for (x1, y1, x2, y2), conf, cls in zip(xyxy, confs, classes):
+            label = str(names[int(cls)]).lower()
+            if label != target or conf < self.confidence:
+                continue
+            found.append(
+                Detection(
+                    label=label,
+                    confidence=float(conf),
+                    x1=float(x1),
+                    y1=float(y1),
+                    x2=float(x2),
+                    y2=float(y2),
+                    frame_id=frame_id,
+                )
+            )
+        found.sort(key=lambda d: d.confidence, reverse=True)
+        return found
