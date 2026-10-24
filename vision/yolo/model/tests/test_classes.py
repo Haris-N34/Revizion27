@@ -27,6 +27,8 @@ from vision.yolo.model.weights import weights_path
         ("my phone", "cell phone"),
         ("cell phone", "cell phone"),
         ("TV remote", "remote"),
+        ("mouse", "mouse"),
+        ("my computer mouse", "mouse"),
     ],
 )
 def test_normalize(spoken, label):

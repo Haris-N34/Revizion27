@@ -77,6 +77,15 @@ def test_keeps_last_box_when_target_drops_out():
     assert guide.det == det
 
 
+def test_cancel_stops_guiding():
+    guide, _, band, _, _ = make()
+    guide.find([FRAME] * 10, "can")
+    guide.cancel()
+    assert guide.state == State.IDLE
+    assert band.sent[-1].direction == Direction.STOP
+    assert guide.step(FRAME) is None
+
+
 def test_stop_always_sends_stop_and_closes():
     guide, _, band, _, _ = make()
     guide.stop()
