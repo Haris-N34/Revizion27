@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from shared.config import DEFAULTS
 from vision.yolo.runtime.detector import ObjectDetector
@@ -73,3 +74,35 @@ def test_passes_confidence_and_size_to_model(can_frame):
     ObjectDetector(DEFAULTS, model=model).detect(can_frame, "can")
     assert model.kwargs["conf"] == DEFAULTS["yolo"]["confidence"]
     assert model.kwargs["imgsz"] == 640
+
+
+def test_distance_from_box_height():
+    import math
+
+    from vision.yolo.runtime.detector import focal_px, object_distance
+
+    sizes = {"can": (0.122, "height"), "mouse": (0.11, "longest")}
+    f = focal_px(640, 70)
+    assert f == pytest.approx(320 / math.tan(math.radians(35)))
+    # A can 100 px tall at 640 px wide, 70 deg: f * 0.122 / 100
+    assert object_distance("can", 50, 100, 640, 70, sizes) == pytest.approx(f * 0.122 / 100)
+    # Twice as tall -> half the distance
+    assert object_distance("can", 50, 200, 640, 70, sizes) == pytest.approx(f * 0.122 / 200)
+    # Flat objects use the longest side
+    assert object_distance("mouse", 110, 40, 640, 70, sizes) == pytest.approx(f * 0.11 / 110)
+    assert object_distance("banana", 50, 100, 640, 70, sizes) is None
+    assert object_distance("can", 50, 0, 640, 70, sizes) is None
+
+
+def test_wider_fov_means_closer():
+    from vision.yolo.runtime.detector import object_distance
+
+    sizes = {"can": (0.122, "height")}
+    assert object_distance("can", 0, 100, 640, 90, sizes) < object_distance(
+        "can", 0, 100, 640, 60, sizes
+    )
+
+
+def test_detections_carry_distance(can_frame):
+    dets = make([(20, 20, 40, 60, 0.9, 0)]).detect(can_frame, "can")
+    assert dets[0].distance_m is not None and dets[0].distance_m > 0
