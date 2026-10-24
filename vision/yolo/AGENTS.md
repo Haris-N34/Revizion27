@@ -1,7 +1,7 @@
 # AGENTS.md: vision/yolo/
 
-Owners: **Rizwan** (`model/`, branch `feat/yolo-rizwan`) and **Harim**
-(`runtime/`, branch `feat/yolo-harim`). Read the root `AGENTS.md` first.
+Owners: **Rizwan** (`model/`, branch `feat/rizwan`) and **Harim**
+(`runtime/`, branch `feat/harim`). Read the root `AGENTS.md` first.
 
 Two people share this area, so the split matters: each branch edits only its
 own subfolder. If you're an agent, check the branch name and stay in the

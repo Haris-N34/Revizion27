@@ -1,6 +1,6 @@
 # AGENTS.md: hardware/
 
-Owner: **Azfar**. Branch: `feat/hardware`. Read the root `AGENTS.md` first.
+Owner: **Azfar**. Branch: `feat/azfar`. Read the root `AGENTS.md` first.
 
 ## Scope
 
@@ -67,6 +67,6 @@ duplicate suppression and `MockBand` using a fake serial object.
 ## Don't
 
 - Don't edit `shared/contracts.py`. If the protocol needs a new command, ask
-  the team for a `feat/shared` PR.
+  the team for a shared PR (root `AGENTS.md`, rule 3).
 - Don't add Python dependencies other than `pyserial` without telling the
   team.
