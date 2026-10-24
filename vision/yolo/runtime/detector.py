@@ -1,5 +1,6 @@
 """ObjectDetector: run YOLO on one frame and return Detections for one target."""
 
+import math
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +14,16 @@ FALLBACK_WEIGHTS = "yolov8s-worldv2.pt"
 FALLBACK_CLASSES = ["can", "bottle", "cup", "cell phone", "remote"]
 # Search text per label; bare "can" misses real cans, "drink can" finds them.
 FALLBACK_PROMPTS = {"can": "drink can"}
+# Real size per label for distance estimates (model/classes.py SIZES_M when present).
+FALLBACK_SIZES_M = {
+    "can": (0.122, "height"),
+    "bottle": (0.23, "height"),
+    "cup": (0.095, "height"),
+    "cell phone": (0.15, "longest"),
+    "remote": (0.18, "longest"),
+    "mouse": (0.11, "longest"),
+}
+DEFAULT_HFOV_DEG = 70.0
 IMGSZ = 640
 
 
@@ -35,6 +46,32 @@ def _supported() -> tuple[list[str], dict[str, str]]:
     except ImportError:
         PROMPTS = FALLBACK_PROMPTS
     return list(SUPPORTED), dict(PROMPTS)
+
+
+def _sizes() -> dict[str, tuple[float, str]]:
+    try:
+        from vision.yolo.model.classes import SIZES_M
+    except ImportError:
+        return dict(FALLBACK_SIZES_M)
+    return dict(SIZES_M)
+
+
+def focal_px(frame_width: int, hfov_deg: float) -> float:
+    """Pinhole focal length in pixels from the camera's horizontal field of view."""
+    return (frame_width / 2) / math.tan(math.radians(hfov_deg) / 2)
+
+
+def object_distance(
+    label: str, w_px: float, h_px: float, frame_width: int, hfov_deg: float, sizes: dict
+) -> float | None:
+    """Camera-to-object distance in metres from the box size, or None if unknown."""
+    if label not in sizes:
+        return None
+    real_m, side = sizes[label]
+    px = h_px if side == "height" else max(w_px, h_px)
+    if px <= 0:
+        return None
+    return float(focal_px(frame_width, hfov_deg) * real_m / px)
 
 
 def _device() -> str:
@@ -81,6 +118,8 @@ class ObjectDetector:
         self.model = model if model is not None else load_model(config)
         self.device = None if model is not None else _device()
         self._frame_id = 0
+        self.hfov_deg = float(config.get("camera_hfov_deg", DEFAULT_HFOV_DEG))
+        self.sizes = _sizes()
 
     def detect(self, frame: np.ndarray, target: str) -> list[Detection]:
         """Boxes labelled `target` with confidence >= threshold, best first."""
@@ -100,6 +139,7 @@ class ObjectDetector:
         xyxy, confs, classes = _np(boxes.xyxy), _np(boxes.conf), _np(boxes.cls)
 
         found = []
+        frame_width = frame.shape[1]
         for (x1, y1, x2, y2), conf, cls in zip(xyxy, confs, classes):
             label = str(names[int(cls)]).lower()
             if label != target or conf < self.confidence:
@@ -113,6 +153,9 @@ class ObjectDetector:
                     x2=float(x2),
                     y2=float(y2),
                     frame_id=frame_id,
+                    distance_m=object_distance(
+                        label, x2 - x1, y2 - y1, frame_width, self.hfov_deg, self.sizes
+                    ),
                 )
             )
         found.sort(key=lambda d: d.confidence, reverse=True)

@@ -11,6 +11,9 @@ from shared.contracts import Detection, Direction, GuidanceCommand, HandPosition
 
 DEFAULT_ARRIVE_PX = 40
 DEFAULT_DEAD_ZONE_PX = 25
+DEFAULT_DEPTH_TOLERANCE = 0.15
+# Depth gap (fraction of the object's distance) at which FORWARD/BACK intensity maxes out.
+FULL_DEPTH_INTENSITY_AT = 0.5
 MIN_INTENSITY, MAX_INTENSITY = 80, 255
 # Distance (as a fraction of the frame diagonal) at which intensity maxes out.
 FULL_INTENSITY_AT = 0.5
@@ -34,13 +37,38 @@ def _axis(offset: float, tolerance: float) -> int:
     return 1 if offset > 0 else -1
 
 
+def _depth_command(
+    det: Detection, hand: HandPosition, distance: float, config: dict
+) -> GuidanceCommand:
+    """FORWARD / BACK until hand and object are at the same depth, then ARRIVED.
+
+    Without both distances this is plain 2D arrival (ARRIVED), as before depth existed.
+    """
+    if not det.distance_m or hand.distance_m is None:
+        return GuidanceCommand(Direction.ARRIVED, MAX_INTENSITY, distance)
+    g = config.get("guidance") or {}
+    tolerance = float(g.get("depth_tolerance", DEFAULT_DEPTH_TOLERANCE))
+    # > 0: hand is nearer the camera than the object, so it has to go deeper.
+    gap = (det.distance_m - hand.distance_m) / det.distance_m
+    if abs(gap) <= tolerance:
+        return GuidanceCommand(Direction.ARRIVED, MAX_INTENSITY, distance)
+    deeper = gap > 0
+    if config.get("mirror"):
+        deeper = not deeper  # camera faces the user: deeper in the image is toward them
+    scale = min(1.0, abs(gap) / FULL_DEPTH_INTENSITY_AT)
+    intensity = round(MIN_INTENSITY + (MAX_INTENSITY - MIN_INTENSITY) * scale)
+    return GuidanceCommand(Direction.FORWARD if deeper else Direction.BACK, intensity, distance)
+
+
 def compute(
     det: Detection, hand: HandPosition | None, frame_shape, config: dict
 ) -> GuidanceCommand:
     """Direction and strength to move the hand (index fingertip) toward the target.
 
     - No hand: LOST.
-    - Fingertip inside the target box, or within arrive_px of its center: ARRIVED.
+    - Fingertip inside the target box, or within arrive_px of its center: lined up.
+      Then, if both distances are known: FORWARD / BACK until the hand's depth is
+      within depth_tolerance of the object's, then ARRIVED. Otherwise ARRIVED.
     - Each axis counts as aligned while the fingertip is within the box's span on
       that axis (never tighter than dead_zone_px), so a big/close object is easy to
       line up with and a small/far one needs more precision.
@@ -59,7 +87,8 @@ def compute(
 
     inside = det.x1 <= hand.x <= det.x2 and det.y1 <= hand.y <= det.y2
     if inside or distance <= arrive_px:
-        return GuidanceCommand(Direction.ARRIVED, MAX_INTENSITY, distance)
+        # Lined up in the image; with depth known, finish along the line of sight.
+        return _depth_command(det, hand, distance, config)
 
     if config.get("mirror"):
         dx = -dx  # camera faces the user: image right is the user's left

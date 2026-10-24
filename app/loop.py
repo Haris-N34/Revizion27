@@ -2,6 +2,7 @@
 
 import time
 from collections.abc import Callable, Iterable
+from dataclasses import replace
 from enum import Enum
 
 import numpy as np
@@ -77,9 +78,9 @@ class Guide:
         if self.state != State.GUIDING:
             return None
         found = self.detector.detect(frame, self.target)
-        if found:
-            self.det = found[0]  # else keep the last known box
         self.hand = self.tracker.track(frame)
+        if found:
+            self.det = self._keep_distance_if_covered(found[0])  # else keep the last box
         self.cmd = self.compute(self.det, self.hand, frame.shape, self.config)
         if self.stabilizer is not None:
             self.cmd = self.stabilizer.update(self.cmd)
@@ -90,6 +91,15 @@ class Guide:
             self.band.send(STOP)
             self.state = State.DONE
         return self.cmd
+
+    def _keep_distance_if_covered(self, new: Detection) -> Detection:
+        """While the fingertip is over the object, the hand hides part of it: the box
+        shrinks and the object looks farther than it is. Keep the last good distance."""
+        old, hand = self.det, self.hand
+        if old is None or old.distance_m is None or hand is None:
+            return new
+        covered = old.x1 <= hand.x <= old.x2 and old.y1 <= hand.y <= old.y2
+        return replace(new, distance_m=old.distance_m) if covered else new
 
     def _check_lost(self) -> None:
         if self.cmd.direction != Direction.LOST:

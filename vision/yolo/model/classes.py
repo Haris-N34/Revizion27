@@ -11,6 +11,18 @@ SUPPORTED: list[str] = ["can", "bottle", "cup", "cell phone", "remote", "mouse"]
 # "mouse" 0.34 vs "wireless mouse" 0.54 on a half-visible mouse.
 PROMPTS: dict[str, str] = {"can": "drink can", "mouse": "wireless mouse"}
 
+# Real size used to estimate distance from the box: (metres, which box side).
+# "height" for things that stand upright (box height is stable as they turn),
+# "longest" for things that lie flat (longest box side). Typical sizes; tune if needed.
+SIZES_M: dict[str, tuple[float, str]] = {
+    "can": (0.122, "height"),  # 355 ml can
+    "bottle": (0.23, "height"),  # 500 ml water bottle
+    "cup": (0.095, "height"),  # mug
+    "cell phone": (0.15, "longest"),
+    "remote": (0.18, "longest"),
+    "mouse": (0.11, "longest"),
+}
+
 # Spoken phrase -> label. Keys are already cleaned by _clean().
 ALIASES: dict[str, str] = {
     # can

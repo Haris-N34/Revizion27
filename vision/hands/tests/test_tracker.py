@@ -106,3 +106,25 @@ def test_real_model_finds_no_hand_in_empty_scene():
         assert tracker.track(cv2.imread(str(FIXTURES / "empty.png"))) is None
     finally:
         tracker.close()
+
+
+def test_distance_from_palm_size():
+    import math
+
+    # World palm: index MCP (5) 8 cm from wrist (0); image: 80 px apart at 640 px wide.
+    res = _result()
+    world = [SimpleNamespace(x=0.0, y=0.0, z=0.0) for _ in range(21)]
+    world[5] = SimpleNamespace(x=0.08, y=0.0, z=0.0)
+    res.hand_world_landmarks = [world]
+    lms = res.hand_landmarks[0]
+    lms[0] = SimpleNamespace(x=0.5, y=0.5)
+    lms[5] = SimpleNamespace(x=0.5 + 80 / W, y=0.5)
+    for i in (9, 17):  # put the other palm points on the wrist: their bones are ignored,
+        lms[i] = SimpleNamespace(x=0.5, y=0.5)  # (5, 17) then matches (0, 5)
+    hand = make(res)[0].track(frame())
+    focal = (W / 2) / math.tan(math.radians(70) / 2)
+    assert hand.distance_m == pytest.approx(focal * 0.08 / 80)
+
+
+def test_no_world_landmarks_means_no_distance():
+    assert make(_result())[0].track(frame()).distance_m is None

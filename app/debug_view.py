@@ -33,12 +33,17 @@ def render(
     if det is not None:
         p1, p2 = (int(det.x1), int(det.y1)), (int(det.x2), int(det.y2))
         cv2.rectangle(out, p1, p2, GREEN, 2)
-        _text(out, f"{det.label} {det.confidence:.2f}", (p1[0], max(20, p1[1] - 8)), GREEN, 0.6)
+        dist = f" {det.distance_m * 100:.0f}cm" if det.distance_m else ""
+        _text(
+            out, f"{det.label} {det.confidence:.2f}{dist}", (p1[0], max(20, p1[1] - 8)), GREEN, 0.6
+        )
     if landmarks and draw_hand is not None:
         draw_hand(out, landmarks)
     if hand is not None:
         tip = (int(hand.x), int(hand.y))
         cv2.circle(out, tip, 9, RED, -1, cv2.LINE_AA)
+        if hand.distance_m:
+            _text(out, f"hand {hand.distance_m * 100:.0f}cm", (tip[0] + 12, tip[1] - 12), RED, 0.6)
         if det is not None:
             center = tuple(int(v) for v in det.center)
             cv2.arrowedLine(out, tip, center, YELLOW, 2, cv2.LINE_AA, tipLength=0.05)
