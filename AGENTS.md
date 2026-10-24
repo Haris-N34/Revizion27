@@ -92,6 +92,7 @@ class Detection:
     x2: float
     y2: float
     frame_id: int
+    distance_m: float | None = None  # camera -> object, metres; None if unknown
 
     @property
     def center(self) -> tuple[float, float]:
@@ -105,6 +106,7 @@ class HandPosition:
     wrist_y: float
     handedness: str       # "Left" or "Right" as seen by the user
     frame_id: int
+    distance_m: float | None = None  # camera -> hand, metres; None if unknown
 
 class Direction(str, Enum):
     UP = "U"
@@ -115,6 +117,8 @@ class Direction(str, Enum):
     UP_RIGHT = "UR"
     DOWN_LEFT = "DL"
     DOWN_RIGHT = "DR"
+    FORWARD = "F"         # aligned; move hand deeper (away from the camera)
+    BACK = "B"            # aligned; hand went past the object, pull back
     ARRIVED = "G"         # grab now
     LOST = "X"            # hand not visible
     STOP = "S"            # all motors off
@@ -128,7 +132,16 @@ class GuidanceCommand:
 
 Frames are OpenCV BGR `numpy.ndarray`, shape `(height, width, 3)`. Pixel y
 grows downward. Directions are from the user's point of view; if the webcam
-faces the user, set `mirror: true` in config and guidance flips left/right.
+faces the user, set `mirror: true` in config and guidance flips left/right
+(and forward/back).
+
+Depth: `distance_m` is optional. The detector fills it from the object's known
+real size, the hand tracker from MediaPipe's metric palm size, both using
+`camera_hfov_deg`. When both are present, guidance aligns the hand in 2D first,
+then says `FORWARD`/`BACK` until hand and object depths are within
+`guidance.depth_tolerance`, then `ARRIVED`. When either is `None`, guidance is
+2D as before. The hand/object distance ratio does not depend on the camera, so
+`camera_hfov_deg` only needs calibrating for absolute centimetres.
 
 ## Module interfaces
 
@@ -154,6 +167,9 @@ frames as arguments; their own `demo.py` may open a camera for testing.
 - 115200 baud, ASCII, one command per line ending in `\n`.
 - Format: `<DIR>,<INTENSITY>\n`, e.g. `L,180\n`, `G,255\n`, `S,0\n`.
 - `<DIR>` is a `Direction` value. `<INTENSITY>` is 0 to 255.
+- `F` / `B` (forward / back) are distinct patterns, not a single motor: e.g.
+  all four motors pulsing, faster as the hand gets closer (`F`), and one long
+  buzz on all four (`B`). Firmware that doesn't know them yet replies `ERR`.
 - Arduino replies `OK\n` to each valid line and `ERR\n` otherwise (host may
   ignore replies).
 - Safety watchdog: if the Arduino gets no line for 500 ms it turns all motors
@@ -169,7 +185,9 @@ frames as arguments; their own `demo.py` may open a camera for testing.
 - Keys: `camera_index`, `mirror`, `serial_port` (e.g. `COM3` or
   `/dev/tty.usbmodem1101`), `baud`, `wrist` (`left`/`right`), `yolo.weights`,
   `yolo.confidence` (default 0.5), `yolo.confirm_frames` (default 3),
-  `scan_timeout_s` (default 5), `guidance.arrive_px`, `guidance.dead_zone_px`.
+  `scan_timeout_s` (default 5), `camera_hfov_deg` (default 70),
+  `guidance.arrive_px`, `guidance.dead_zone_px`, `guidance.depth_tolerance`
+  (default 0.15).
 - New keys: add them to `config.example.yaml` via a shared PR (rule 3), and give
   every new key a default in code so older configs still run.
 

@@ -21,9 +21,11 @@ DEFAULTS: dict = {
         "confirm_frames": 3,
     },
     "scan_timeout_s": 5.0,
+    "camera_hfov_deg": 70.0,
     "guidance": {
         "arrive_px": 40,
         "dead_zone_px": 25,
+        "depth_tolerance": 0.15,
     },
 }
 
