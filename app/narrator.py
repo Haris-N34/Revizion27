@@ -24,6 +24,8 @@ WORDS = {
     Direction.UP_RIGHT: "up right",
     Direction.DOWN_LEFT: "down left",
     Direction.DOWN_RIGHT: "down right",
+    Direction.FORWARD: "forward",
+    Direction.BACK: "back",
 }
 
 

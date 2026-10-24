@@ -86,3 +86,9 @@ def test_reset_and_none():
     n.reset()
     feed(n, clock, [(0.1, D.DOWN)])
     assert speaker.said == ["down", "down"]
+
+
+def test_forward_and_back_are_spoken():
+    n, speaker, clock = make()
+    feed(n, clock, [(0.0, D.FORWARD), (2.0, D.BACK)])
+    assert speaker.said == ["forward", "back"]

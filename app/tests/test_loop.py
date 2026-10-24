@@ -128,3 +128,26 @@ def test_stabilizer_sits_between_compute_and_band():
     assert guide.state == State.GUIDING
     guide.step(FRAME)  # twice -> DONE
     assert guide.state == State.DONE
+
+
+def test_object_distance_kept_while_hand_covers_it():
+    from dataclasses import replace
+
+    guide, tracker, _, _, _ = make()
+    det = guide.find([FRAME] * 10, "can")
+    guide.det = replace(det, distance_m=0.6)  # last good estimate
+
+    class ShrunkDetector(FakeDetector):  # hand hides half the can: looks farther
+        def detect(self, frame, target):
+            return [replace(d, distance_m=1.2) for d in super().detect(frame, target)]
+
+    guide.detector = ShrunkDetector()
+    tracker.pos = det.center  # fingertip over the can
+    tracker.speed = 0
+    guide.step(FRAME)
+    assert guide.det.distance_m == 0.6
+
+    guide.state = State.GUIDING  # fingertip on the can made the fake guidance arrive
+    tracker.pos = (5.0, 5.0)  # hand moves away: trust new estimates again
+    guide.step(FRAME)
+    assert guide.det.distance_m == 1.2
