@@ -94,6 +94,12 @@ class Guide:
             self.say(voice_out.HAND_LOST)
             self._warned_lost = True
 
+    def cancel(self) -> None:
+        """Abandon the current guidance (user asked for something else)."""
+        self.band.send(STOP)
+        self.state = State.IDLE
+        self.cmd = None
+
     def stop(self) -> None:
         """Always safe to call: motors off, band closed."""
         try:
