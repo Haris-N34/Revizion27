@@ -4,11 +4,12 @@ import re
 
 # Lowercase labels the weights produce. export.py bakes exactly this list into
 # the YOLO-World model, so model.names == SUPPORTED.
-SUPPORTED: list[str] = ["can", "bottle", "cup", "cell phone", "remote"]
+SUPPORTED: list[str] = ["can", "bottle", "cup", "cell phone", "remote", "mouse"]
 
 # Text YOLO-World actually searches for, when the bare label works poorly.
 # Bare "can" scored 0 on a real Coke can (it said "bottle" 0.54); "drink can" 0.94.
-PROMPTS: dict[str, str] = {"can": "drink can"}
+# "mouse" 0.34 vs "wireless mouse" 0.54 on a half-visible mouse.
+PROMPTS: dict[str, str] = {"can": "drink can", "mouse": "wireless mouse"}
 
 # Spoken phrase -> label. Keys are already cleaned by _clean().
 ALIASES: dict[str, str] = {
@@ -55,6 +56,10 @@ ALIASES: dict[str, str] = {
     "tv remote": "remote",
     "controller": "remote",
     "clicker": "remote",
+    # mouse
+    "computer mouse": "mouse",
+    "wireless mouse": "mouse",
+    "mice": "mouse",
 }
 
 _FILLER = {"a", "an", "the", "my", "some", "me", "to", "take", "find", "please", "get"}
