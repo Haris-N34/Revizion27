@@ -12,6 +12,11 @@ from shared.contracts import Detection, Direction, GuidanceCommand, HandPosition
 DEFAULT_ARRIVE_PX = 40
 DEFAULT_DEAD_ZONE_PX = 25
 DEFAULT_DEPTH_TOLERANCE = 0.15
+# Hand outline covering at least this fraction of the object's box = touching it.
+DEFAULT_CONTACT_OVERLAP = 0.3
+# Hand point within the object's box grown by this fraction (each side) = lined up;
+# stops forward/back <-> left/right flip-flopping when hovering at the box edge.
+ALIGN_MARGIN = 0.2
 # Depth gap (fraction of the object's distance) at which FORWARD/BACK intensity maxes out.
 FULL_DEPTH_INTENSITY_AT = 0.5
 MIN_INTENSITY, MAX_INTENSITY = 80, 255
@@ -35,6 +40,29 @@ def _axis(offset: float, tolerance: float) -> int:
     if abs(offset) <= tolerance:
         return 0
     return 1 if offset > 0 else -1
+
+
+def point_in_box(x: float, y: float, det: Detection, margin: float = 0.0) -> bool:
+    """Is (x, y) inside the box grown by `margin` (fraction of its size) on each side?"""
+    mx, my = (det.x2 - det.x1) * margin, (det.y2 - det.y1) * margin
+    return det.x1 - mx <= x <= det.x2 + mx and det.y1 - my <= y <= det.y2 + my
+
+
+def covered_fraction(det: Detection, hand_box) -> float:
+    """Fraction of the object's box covered by the hand's outline (0 if unknown).
+
+    When you grab something your hand hides part of it, and the palm center can sit
+    just outside the visible part (e.g. holding a phone: YOLO only sees the top).
+    """
+    if hand_box is None:
+        return 0.0
+    x1, y1, x2, y2 = hand_box
+    w = min(det.x2, x2) - max(det.x1, x1)
+    h = min(det.y2, y2) - max(det.y1, y1)
+    area = (det.x2 - det.x1) * (det.y2 - det.y1)
+    if w <= 0 or h <= 0 or area <= 0:
+        return 0.0
+    return (w * h) / area
 
 
 def _depth_command(
@@ -85,8 +113,12 @@ def compute(
     dx, dy = cx - hand.x, cy - hand.y
     distance = math.hypot(dx, dy)
 
-    inside = det.x1 <= hand.x <= det.x2 and det.y1 <= hand.y <= det.y2
-    if inside or distance <= arrive_px:
+    contact = float(g.get("contact_overlap", DEFAULT_CONTACT_OVERLAP))
+    if (
+        point_in_box(hand.x, hand.y, det, ALIGN_MARGIN)
+        or covered_fraction(det, hand.box) >= contact
+        or distance <= arrive_px
+    ):
         # Lined up in the image; with depth known, finish along the line of sight.
         return _depth_command(det, hand, distance, config)
 

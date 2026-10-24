@@ -29,6 +29,8 @@ class HandPosition:
     handedness: str  # "Left" or "Right" as seen by the user
     frame_id: int
     distance_m: float | None = None  # camera -> hand, metres; None if unknown
+    box: tuple[float, float, float, float] | None = None  # x1, y1, x2, y2 of all
+    # hand landmarks (pixels): the hand's outline, for hand/object overlap; None if unknown
 
 
 class Direction(str, Enum):

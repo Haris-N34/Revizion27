@@ -136,3 +136,9 @@ def test_distance_from_palm_size():
 
 def test_no_world_landmarks_means_no_distance():
     assert make(_result())[0].track(frame()).distance_m is None
+
+
+def test_hand_box_spans_all_landmarks():
+    hand = make(_result())[0].track(frame())
+    # Landmarks at (i/40, i/30) for i = 0..20
+    assert hand.box == pytest.approx((0, 0, 20 / 40 * W, 20 / 30 * H))

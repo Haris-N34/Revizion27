@@ -14,6 +14,7 @@ from vision.yolo.runtime.scan import scan
 STOP = GuidanceCommand(Direction.STOP, 0, 0.0)
 HAND_LOST_AFTER_S = 2.0
 COVER_MARGIN = 0.15  # hand point within the box grown by 15% counts as covering it
+COVER_OVERLAP = 0.3  # ...or the hand's outline covering 30% of the box
 MISSING_FRAMES = 8  # target unseen this many frames (not under the hand) = out of view
 TARGET_LOST_S = 6.0  # out of view this long: give up and scan again
 
@@ -21,6 +22,22 @@ TARGET_LOST_S = 6.0  # out of view this long: give up and scan again
 def _inside(x: float, y: float, d: Detection, margin: float = 0.0) -> bool:
     mx, my = (d.x2 - d.x1) * margin, (d.y2 - d.y1) * margin
     return d.x1 - mx <= x <= d.x2 + mx and d.y1 - my <= y <= d.y2 + my
+
+
+def _covering(hand: HandPosition | None, det: Detection) -> bool:
+    """Is the hand over the object: hand point inside the box (+COVER_MARGIN), or the
+    hand's outline covering at least COVER_OVERLAP of it?"""
+    if hand is None:
+        return False
+    if _inside(hand.x, hand.y, det, COVER_MARGIN):
+        return True
+    if hand.box is None:
+        return False
+    hx1, hy1, hx2, hy2 = hand.box
+    w = min(det.x2, hx2) - max(det.x1, hx1)
+    h = min(det.y2, hy2) - max(det.y1, hy1)
+    area = (det.x2 - det.x1) * (det.y2 - det.y1)
+    return w > 0 and h > 0 and area > 0 and (w * h) / area >= COVER_OVERLAP
 
 
 def _iou(a: Detection, b: Detection) -> float:
@@ -147,7 +164,7 @@ class Guide:
             return old
         if old is None:
             return found[0]
-        if hand is not None and _inside(hand.x, hand.y, old, COVER_MARGIN):
+        if _covering(hand, old):
             best = found[0]
             return replace(old, confidence=best.confidence, frame_id=best.frame_id)
         overlapping = [d for d in found if _iou(d, old) > 0]
@@ -156,10 +173,7 @@ class Guide:
     def _track_missing(self, found: list[Detection]) -> None:
         """Count frames the target is out of sight. Under the hand doesn't count."""
         old, hand = self.det, self.hand
-        covered = (
-            old is not None and hand is not None and _inside(hand.x, hand.y, old, COVER_MARGIN)
-        )
-        if found or covered:
+        if found or (old is not None and _covering(hand, old)):
             self._missing, self._missing_since = 0, None
             return
         self._missing += 1

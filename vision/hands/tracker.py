@@ -110,6 +110,12 @@ class HandTracker:
             handedness=handedness,
             frame_id=frame_id,
             distance_m=self._distance(result, points, width),
+            box=(
+                min(p[0] for p in points),
+                min(p[1] for p in points),
+                max(p[0] for p in points),
+                max(p[1] for p in points),
+            ),
         )
 
     def grab_point(self, points: list[tuple[float, float]]) -> tuple[float, float]:

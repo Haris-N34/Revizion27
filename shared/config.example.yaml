@@ -44,3 +44,5 @@ guidance:
   dead_zone_px: 25
   # Hand and object distances within this fraction count as the same depth (0.15 = 15%)
   depth_tolerance: 0.15
+  # Hand outline covering this fraction of the object's box counts as touching it
+  contact_overlap: 0.3

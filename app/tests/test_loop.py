@@ -274,3 +274,29 @@ def test_hand_covering_target_never_counts_as_lost():
         guide.step(FRAME)
     assert not guide.rescan_requested
     assert "I lost the can. Looking again." not in said
+
+
+def test_hand_outline_covering_object_freezes_box():
+    """Palm point outside the box, but the hand's outline covers most of it."""
+    from dataclasses import replace
+
+    from shared.contracts import Detection, HandPosition
+
+    guide, _, _, _, _ = make()
+    guide.find([FRAME] * 10, "can")
+    full = Detection("can", 0.9, 300, 100, 380, 300, 0)
+    guide.det = full
+
+    class Partial(FakeDetector):
+        def detect(self, frame, target):
+            return [Detection("can", 0.6, 300, 100, 380, 150, 1)]  # only the top shows
+
+    class HoldingTracker:
+        landmarks = None
+
+        def track(self, frame):
+            return HandPosition(340, 330, 340, 400, "Right", 0, box=(280, 140, 400, 420))
+
+    guide.detector, guide.tracker = Partial(), HoldingTracker()
+    guide.step(FRAME)
+    assert replace(guide.det, confidence=0.9, frame_id=0) == full

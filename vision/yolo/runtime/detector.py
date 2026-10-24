@@ -64,11 +64,18 @@ def focal_px(frame_width: int, hfov_deg: float) -> float:
 def object_distance(
     label: str, w_px: float, h_px: float, frame_width: int, hfov_deg: float, sizes: dict
 ) -> float | None:
-    """Camera-to-object distance in metres from the box size, or None if unknown."""
+    """Camera-to-object distance in metres from the box size, or None if unknown.
+
+    Only for upright objects ("height" in the size table): their box height stays true
+    as they turn. Flat ones (phone, remote, mouse) lie, tilt and get half-covered by
+    the hand, so their box size says little about distance; guidance stays 2D for them.
+    """
     if label not in sizes:
         return None
     real_m, side = sizes[label]
-    px = h_px if side == "height" else max(w_px, h_px)
+    if side != "height":
+        return None
+    px = h_px
     if px <= 0:
         return None
     return float(focal_px(frame_width, hfov_deg) * real_m / px)

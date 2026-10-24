@@ -108,6 +108,7 @@ class HandPosition:
     handedness: str       # "Left" or "Right" as seen by the user
     frame_id: int
     distance_m: float | None = None  # camera -> hand, metres; None if unknown
+    box: tuple[float, float, float, float] | None = None  # hand outline x1,y1,x2,y2
 
 class Direction(str, Enum):
     UP = "U"

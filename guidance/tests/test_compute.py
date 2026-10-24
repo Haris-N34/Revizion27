@@ -152,3 +152,34 @@ def test_turn_toward_edge_it_left_from():
     assert turn_toward(middle, SHAPE, CFG) is None
     mirrored = dict(CFG, mirror=True)
     assert turn_toward(left, SHAPE, mirrored).direction == Direction.RIGHT
+
+
+# --- contact by overlap (holding / covering the object) -----------------------
+def test_holding_phone_counts_as_arrived():
+    """From a real frame: phone held in hand, YOLO sees only its top (camera bump),
+    palm center sits below that box. The hand covers ~60% of the box: arrived."""
+    phone = Detection("cell phone", 0.51, 1315, 460, 1690, 780, 0)
+    palm = HandPosition(1405, 995, 1170, 1175, "Right", 0, box=(1150, 580, 1740, 1180))
+    cmd = compute(phone, palm, (1080, 1920, 3), CFG)
+    assert cmd.direction == Direction.ARRIVED
+
+
+def test_little_overlap_is_not_contact():
+    can = Detection("can", 0.9, 290, 190, 350, 290, 0)
+    h = HandPosition(320, 450, 320, 480, "Right", 0, box=(300, 280, 400, 479))  # 10% overlap
+    assert compute(can, h, SHAPE, CFG).direction == Direction.UP
+
+
+def test_edge_margin_counts_as_lined_up():
+    # 5 px outside the box's right edge (60 px wide box, 20% margin = 12 px): lined up.
+    can = Detection("can", 0.9, 290, 190, 350, 290, 0)
+    assert compute(can, hand(355, 240), SHAPE, CFG).direction == Direction.ARRIVED
+
+
+def test_covered_fraction():
+    from guidance.compute import covered_fraction
+
+    box = Detection("can", 0.9, 0, 0, 100, 100, 0)
+    assert covered_fraction(box, None) == 0
+    assert covered_fraction(box, (50, 0, 150, 100)) == pytest.approx(0.5)
+    assert covered_fraction(box, (200, 200, 300, 300)) == 0

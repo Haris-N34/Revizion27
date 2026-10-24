@@ -88,8 +88,8 @@ def test_distance_from_box_height():
     assert object_distance("can", 50, 100, 640, 70, sizes) == pytest.approx(f * 0.122 / 100)
     # Twice as tall -> half the distance
     assert object_distance("can", 50, 200, 640, 70, sizes) == pytest.approx(f * 0.122 / 200)
-    # Flat objects use the longest side
-    assert object_distance("mouse", 110, 40, 640, 70, sizes) == pytest.approx(f * 0.11 / 110)
+    # Flat objects: no distance (box size is unreliable when they lie, tilt, or are held)
+    assert object_distance("mouse", 110, 40, 640, 70, sizes) is None
     assert object_distance("banana", 50, 100, 640, 70, sizes) is None
     assert object_distance("can", 50, 0, 640, 70, sizes) is None
 

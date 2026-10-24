@@ -27,6 +27,7 @@ DEFAULTS: dict = {
         "arrive_px": 40,
         "dead_zone_px": 25,
         "depth_tolerance": 0.15,
+        "contact_overlap": 0.3,
     },
 }
 
