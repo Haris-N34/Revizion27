@@ -6,6 +6,8 @@ Without --target it starts listening right away. --no-voice types instead of tal
 """
 
 import argparse
+import faulthandler
+import sys
 import time
 from types import SimpleNamespace
 
@@ -20,6 +22,7 @@ from shared.config import load_config
 from vision.yolo.runtime.detector import ObjectDetector
 
 WINDOW = "octaby"
+STALL_S = 3.0  # a frame slower than this dumps every thread's stack to the terminal
 SPACE, RESCAN, QUIT_KEYS = ord(" "), ord("r"), (ord("q"), 27)
 
 
@@ -87,6 +90,8 @@ class Viewer:
         self._last = time.perf_counter()
 
     def show_frame(self, image) -> int:
+        # Stall detector: re-armed every frame; only fires if the loop stops for STALL_S.
+        faulthandler.dump_traceback_later(STALL_S, repeat=True, file=sys.stderr)
         now = time.perf_counter()
         dt, self._last = now - self._last, now
         if dt > 0:
@@ -204,6 +209,7 @@ class App:
             self.ask()
         source = a.video if a.video else camera_source(self.config)
         cap = cv2.VideoCapture(source)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # always the newest frame, never a backlog
         if not cap.isOpened():
             raise SystemExit(f"Could not open {source!r}")
         frames = read_frames(cap)
@@ -221,6 +227,7 @@ class App:
                 self.parts.tracker.close()
             cap.release()
             cv2.destroyAllWindows()
+            faulthandler.cancel_dump_traceback_later()
             self.speaker.close()
 
     def scan(self, frames) -> None:
