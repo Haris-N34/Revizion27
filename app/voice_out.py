@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 
 LISTENING = "Listening."
 LOOKING = "Looking for a {}."
@@ -38,10 +39,11 @@ class Speaker:
     def busy(self) -> bool:
         return self._busy.is_set()
 
-    def wait(self) -> None:
-        """Block until everything queued has been spoken (e.g. before listening)."""
-        if self.enabled:
-            self._queue.join()
+    def wait(self, timeout: float = 3.0) -> None:
+        """Block until queued speech is done (e.g. before listening), at most `timeout` s."""
+        end = time.monotonic() + timeout
+        while self.enabled and self._busy.is_set() and time.monotonic() < end:
+            time.sleep(0.02)
 
     def close(self) -> None:
         if self._thread:

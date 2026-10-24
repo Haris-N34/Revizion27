@@ -6,7 +6,9 @@ The video loop polls Listener.result() so it never blocks.
 """
 
 import re
+import sys
 import threading
+import types
 from collections.abc import Callable
 
 import numpy as np
@@ -18,6 +20,7 @@ END_SILENCE_S = 0.8  # this much quiet after speech ends the recording
 NO_SPEECH_S = 4.0  # give up if nobody talks
 MAX_S = 6.0
 MODEL_SIZE = "base.en"
+WHISPER_THREADS = 2  # leave CPU for YOLO + MediaPipe so the video loop doesn't stutter
 
 # "can" is usually a verb in these, not the object.
 _CAN_VERB_NEXT = {"you", "i", "we", "u", "someone", "it", "anyone"}
@@ -40,6 +43,26 @@ def extract_target(text: str, normalize: Callable[[str], str | None]) -> str | N
             if label and (best is None or (n, i) > best[:2]):
                 best = (n, i, label)
     return best[2] if best else None
+
+
+def _block_pyav() -> None:
+    """Keep PyAV out of the process.
+
+    faster-whisper imports `av` only to decode audio *files*; we pass raw samples.
+    On macOS, PyAV and OpenCV each bundle FFmpeg's libavdevice, and loading both
+    gives duplicate Objective-C classes ("may cause mysterious crashes").
+    """
+    if "av" in sys.modules:
+        return
+    stub = types.ModuleType("av")
+
+    def _unavailable(name):
+        if name.startswith("__"):
+            raise AttributeError(name)  # keep hasattr()/introspection working
+        raise ImportError(f"PyAV is disabled in Octaby (av.{name}); pass audio as numpy")
+
+    stub.__getattr__ = _unavailable
+    sys.modules["av"] = stub
 
 
 def _rms(block: np.ndarray) -> float:
@@ -81,9 +104,15 @@ class Listener:
     def _load(self):
         with self._model_lock:
             if self._model is None:
+                _block_pyav()
                 from faster_whisper import WhisperModel
 
-                self._model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
+                self._model = WhisperModel(
+                    self.model_size,
+                    device="cpu",
+                    compute_type="int8",
+                    cpu_threads=WHISPER_THREADS,
+                )
         return self._model
 
     def start(self) -> bool:

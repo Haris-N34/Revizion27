@@ -68,3 +68,29 @@ def test_disabled_speaker_prints(capsys):
     speaker.wait()
     assert "I can't find a can" in capsys.readouterr().out
     assert not speaker.busy()
+
+
+def test_wait_never_hangs_when_speech_hangs(monkeypatch):
+    import time
+
+    monkeypatch.setattr(voice_out, "_backend", lambda: lambda text: time.sleep(5))
+    speaker = voice_out.Speaker(enabled=True)
+    speaker.say("hello")
+    start = time.monotonic()
+    speaker.wait(timeout=0.3)
+    assert time.monotonic() - start < 1.0
+
+
+def test_whisper_loads_without_pyav():
+    """faster-whisper imports with PyAV blocked (separate process: sys.modules stays clean)."""
+    import subprocess
+    import sys
+
+    pytest.importorskip("faster_whisper")
+    code = (
+        "from app.voice_in import _block_pyav; _block_pyav(); "
+        "import faster_whisper, av; "
+        "print('stub' if not hasattr(av, '__path__') else 'real')"
+    )
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "stub"
