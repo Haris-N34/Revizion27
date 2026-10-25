@@ -181,6 +181,7 @@ def run_camera(state, args):
                 app.frame(rotate_frame(frame, rotation))
             g = app.guide
             state.update(status=app.status(), phase=g.state.value, target=app.target,
+                         target_visibility=getattr(g, "visibility", "visible"),
                          hand=g.hand is not None, detected=g.det is not None,
                          direction=g.cmd.direction.name.replace("_", " ") if g.cmd and g.state == State.GUIDING else None,
                          fps=round(app.viewer.fps), listening=app.listener.state if app.listener else "disabled")

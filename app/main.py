@@ -213,6 +213,11 @@ class App:
             return "listening..."
         if self.listener and self.listener.state == "transcribing":
             return "thinking..."
+        visibility = getattr(self.guide, "visibility", "visible")
+        if self.target and visibility == "occluded":
+            return f"hand may cover {self.target}; remembering its position"
+        if self.target and visibility == "missing":
+            return f"look around for {self.target}"
         return {
             State.GUIDING: (
                 f"turn {self.guide.cmd.direction.name.lower()} to find {self.target}"

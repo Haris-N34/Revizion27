@@ -6,4 +6,4 @@
 5. Standalone demo: `python -m app.web --demo` (synthetic camera and mock hardware, no voice); `--mock-band`, `--no-voice`, `--video FILE`, and `--port 8766` are also available.
 6. Desktop: `python -m app.main`; optional `--target can`, `--mock-band`, `--no-voice`, `--video FILE`, `--no-window`, `--say-directions on`. Quit with **q**; stop the web server with **Ctrl+C**.
 7. Tests without hardware: `python -m pytest app`. Calibrate with `python -m app.calibrate`. Whisper `base.en` downloads once; speech uses Windows SAPI, macOS `say`, or Linux pyttsx3.
-8. Target memory lasts 1 s for misses or 4 s under the hand. Sustained overlap estimates arrival, not physical touch. Phone and band stay connected to the laptop; the page is served locally.
+8. Target memory lasts 1 s for misses or 6 s under the hand; background camera motion invalidates it. Voice distinguishes possible hand coverage from a lost target and asks you to look around. Arrival needs fresh detection and sustained depth agreement; overlap alone cannot confirm a grasp. Phone and band stay connected to the laptop.

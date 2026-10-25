@@ -20,6 +20,11 @@ HAND_LOST = "I can't see your hand."
 LOST_TARGET = "I lost the {}. Looking again."
 ARRIVED = "You're there"
 FOUND = "Object found"
+TARGET_COVERED = "Your hand may be covering the {}. I remember its position."
+LOOK_AROUND = "I lost sight of the {}. Move your hand aside and slowly look around."
+LOOK_BACK = "The {} was last seen on your {}. Slowly look that way."
+TARGET_AGAIN = "I can see the {} again."
+CHECK_DEPTH = "Your hand is lined up. Move it aside briefly so I can check the object."
 
 
 class Speaker:

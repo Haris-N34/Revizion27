@@ -139,7 +139,7 @@ def test_object_distance_kept_while_hand_covers_it():
 
     class ShrunkDetector(FakeDetector):  # hand hides half the can: looks farther
         def detect(self, frame, target):
-            return [replace(d, distance_m=1.2) for d in super().detect(frame, target)]
+            return [replace(d, y2=(d.y1 + d.y2) / 2, distance_m=1.2) for d in super().detect(frame, target)]
 
     guide.detector = ShrunkDetector()
     tracker.pos = det.center  # fingertip over the can
@@ -328,11 +328,20 @@ def test_continuous_detection_recovers_after_target_disappears():
 
 
 def test_continuous_detection_resumes_after_arrival_without_repeating_grab():
-    guide, tracker, band, said, _ = make()
+    from dataclasses import replace
+    from app.loop import CONTACT_HOLD_S
+
+    guide, tracker, band, said, clock = make()
+    detect, track = guide.detector.detect, tracker.track
+    guide.detector.detect = lambda *a: [replace(d, distance_m=1.0) for d in detect(*a)]
+    tracker.track = lambda *a: replace(track(*a), distance_m=1.0)
     guide.start("can")
     for _ in range(guide.detector.confirm_frames):
         guide.follow(FRAME)
     tracker.pos, tracker.speed = guide.det.center, 0
+    guide.follow(FRAME)
+    assert guide.state != State.DONE
+    clock.t += CONTACT_HOLD_S + 0.1
     guide.follow(FRAME)
     assert guide.state == State.DONE
     guide.follow(FRAME)
@@ -344,7 +353,7 @@ def test_continuous_detection_resumes_after_arrival_without_repeating_grab():
     assert band.sent[-1].direction not in (Direction.STOP, Direction.ARRIVED)
 
 
-def test_continuous_occlusion_remembers_box_and_confirms_contact():
+def test_continuous_occlusion_remembers_box_without_confirming_contact():
     from app.loop import CONTACT_HOLD_S, OCCLUSION_MEMORY_S
     from shared.contracts import GuidanceCommand
 
@@ -359,15 +368,15 @@ def test_continuous_occlusion_remembers_box_and_confirms_contact():
     guide.detector.found_after = None
     guide.follow(FRAME)
     assert guide.det == remembered
-    assert band.sent[-1].direction == Direction.STOP
+    assert band.sent[-1].direction == Direction.FORWARD
     clock.t = CONTACT_HOLD_S + 0.1
     guide.follow(FRAME)
-    assert guide.state == State.DONE
-    assert band.sent[-1].direction == Direction.ARRIVED
+    assert guide.state != State.DONE
+    assert band.sent[-1].direction == Direction.FORWARD
     guide.follow(FRAME)
-    assert guide.state == State.DONE
-    assert said.count(voice_out.ARRIVED) == 1
-    assert band.sent[-1].direction == Direction.STOP
+    assert guide.state != State.DONE
+    assert voice_out.ARRIVED not in said
+    assert band.sent[-1].direction == Direction.FORWARD
     clock.t = OCCLUSION_MEMORY_S + 0.1
     guide.follow(FRAME)
     assert guide.state == State.SCANNING
