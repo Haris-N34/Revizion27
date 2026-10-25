@@ -24,6 +24,7 @@ def web_server():
         state.condition.notify_all()
     server.shutdown()
     server.server_close()
+    state.browser_frames.close()
     thread.join(timeout=2)
 
 
@@ -81,6 +82,16 @@ def test_https_tunnel_accepts_same_origin_controls(web_server):
     with post(url, "/api/stop", Host=host, Origin="https://" + host) as response:
         assert response.status == 202
     assert state.actions.get_nowait() == ("stop", None)
+
+
+def test_browser_frames_are_independent_of_laptop_camera_readiness(web_server):
+    state, url = web_server
+    received = []
+    state.browser_frames.submit = lambda payload: received.append(payload) or {"detections": []}
+    with post(url, "/api/analyze", {"session": "browser-session-1234", "image": "x" * 2000}) as response:
+        assert json.load(response) == {"detections": []}
+    assert len(received[0]["image"]) == 2000
+    assert not state.snapshot()["ready"] and state.actions.empty()
 
 
 def test_stream_contains_encoded_camera_frame(web_server):

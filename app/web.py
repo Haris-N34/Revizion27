@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 
 from app import voice_out
+from app.browser_camera import BrowserFrames
 from app.fakes import FakeDetector, FakeHandTracker, PrintBand, fake_compute
 from app.loop import State
 from app.main import App, Viewer, camera_source
@@ -32,6 +33,7 @@ class WebState:
         self.events = deque(maxlen=6)
         self.data = {"ready": False, "status": "Starting camera and guidance…", "error": None}
         self.shutdown = threading.Event()
+        self.browser_frames = BrowserFrames()
 
     def update(self, **values):
         with self.condition:
@@ -254,13 +256,22 @@ def make_handler(state):
                 return
             try:
                 length = int(self.headers.get("Content-Length", "0"))
-                if not 0 < length <= 1024:
+                if not 0 < length <= (750_000 if self.path == "/api/analyze" else 1024):
                     raise ValueError()
                 payload = json.loads(self.rfile.read(length))
                 if not isinstance(payload, dict):
                     raise ValueError()
             except (ValueError, json.JSONDecodeError):
                 self.send(400, b'{"error":"Invalid request"}')
+                return
+            if self.path == "/api/analyze":
+                try:
+                    self.send(200, json.dumps(state.browser_frames.submit(payload)).encode())
+                except ValueError as exc:
+                    self.send(400, json.dumps({"error": str(exc)}).encode())
+                except Exception as exc:
+                    print(f"[browser-camera] {exc}", flush=True)
+                    self.send(503, b'{"error":"Detection is warming up or busy. Retrying..."}')
                 return
             actions = {"/api/target": "target", "/api/listen": "listen",
                        "/api/stop": "stop", "/api/rotate": "rotate"}
@@ -326,6 +337,7 @@ def main():
         with state.condition:
             state.condition.notify_all()
         server.server_close()
+        state.browser_frames.close()
         worker.join(timeout=8)
 
 
