@@ -24,7 +24,7 @@ from app.voice_in import Listener, extract_target
 from shared.config import load_config
 from vision.yolo.runtime.detector import ObjectDetector
 
-WINDOW = "octaby"
+WINDOW = "REVISION"
 STALL_S = 3.0  # a frame slower than this dumps every thread's stack to the terminal
 SPACE, QUIT_KEYS = ord(" "), (ord("q"), 27)
 

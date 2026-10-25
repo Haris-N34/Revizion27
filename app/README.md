@@ -1,4 +1,4 @@
-# Octaby app (Harim)
+# REVISION app (Harim)
 1. Install app dependencies: `python -m pip install -r app/requirements.txt`.
 2. Web UI: `python -m app.web`, then open **http://127.0.0.1:8765** on the laptop.
 3. Pair the phone as a Windows connected camera; select it with `camera_index` in local `config.yaml`. Arduino uses `serial_port` and `baud` from the same config.

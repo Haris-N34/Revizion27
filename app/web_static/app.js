@@ -35,7 +35,7 @@ function show(data) {
   $('stop').disabled = !data.ready;
   if (data.events?.length) $('feedback').textContent = data.events[0];
   if (data.error) notice(data.error);
-  if (stale) notice('The camera has stopped sending frames. Guidance pauses when frames stop. Reconnect the phone camera and restart Octaby.');
+  if (stale) notice('The camera has stopped sending frames. Guidance pauses when frames stop. Reconnect the phone camera and restart REVISION.');
   const placeholder = $('camera-placeholder');
   placeholder.style.display = data.frame_age_s !== null && !stale ? 'none' : 'flex';
   if (data.error) { placeholder.querySelector('strong').textContent = 'Let’s reconnect your camera'; placeholder.querySelector('span:last-child').textContent = data.error; }
@@ -64,7 +64,7 @@ async function poll() {
     if (!response.ok) throw new Error();
     show(await response.json());
   } catch {
-    notice('Lost connection to Octaby. Restart the local app, then refresh this page.');
+    notice('Lost connection to REVISION. Restart the local app, then refresh this page.');
     $('status').textContent = 'Disconnected'; $('talk').disabled = true; $('stop').disabled = true;
     for (const button of $('targets').children) button.disabled = true;
   }

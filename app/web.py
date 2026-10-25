@@ -281,7 +281,7 @@ def main():
     server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(state))
     worker = threading.Thread(target=run_camera, args=(state, args), daemon=True)
     worker.start()
-    print(f"Octaby web UI: http://127.0.0.1:{server.server_port}", flush=True)
+    print(f"REVISION web UI: http://127.0.0.1:{server.server_port}", flush=True)
     try:
         server.serve_forever(poll_interval=0.2)
     except KeyboardInterrupt:
