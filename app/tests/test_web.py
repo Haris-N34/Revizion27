@@ -111,6 +111,14 @@ def test_stop_discards_transcript_that_finishes_later():
     assert app.pending is None
 
 
+def test_stop_is_allowed_while_camera_reconnects(web_server):
+    state, url = web_server
+    state.update(ready=False, phase="RECONNECTING")
+    with post(url, "/api/stop") as response:
+        assert response.status == 202
+    assert state.actions.get_nowait() == ("stop", None)
+
+
 def test_camera_rotation_applies_to_frame_before_guidance():
     frame = np.zeros((2, 3, 3), dtype=np.uint8)
     frame[0, 0] = 255

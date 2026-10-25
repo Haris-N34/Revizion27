@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-let current = {}, supportedKey = '', requesting = false;
+let current = {}, supportedKey = '', requesting = false, connectionNotice = false;
 const icons = {can:'▥', bottle:'♙', cup:'☕', 'cell phone':'▯', remote:'▤', mouse:'◒'};
 const labels = {'cell phone':'Phone'};
 const label = target => labels[target] || target.charAt(0).toUpperCase() + target.slice(1);
@@ -32,12 +32,17 @@ function show(data) {
   $('talk').classList.toggle('recording', data.listening === 'recording');
   $('talk-label').textContent = data.listening === 'recording' ? 'Listening…' : data.listening === 'transcribing' ? 'Recognizing…' : 'Press to talk';
   $('voice-help').textContent = data.ready && !data.voice ? 'Voice is off for this session. Choose a target above.' : 'Press the wristband button, say “find a can,” then pause.';
-  $('stop').disabled = !data.ready;
+  $('stop').disabled = !data.ready && data.phase !== 'RECONNECTING';
   $('rotate').disabled = !ready || ['recording','transcribing'].includes(data.listening);
   $('rotate').textContent = `↻ Rotate camera · ${data.rotation || 0}°`;
   if (data.events?.length) $('feedback').textContent = data.events[0];
-  if (data.error) notice(data.error);
-  if (stale) notice('The camera has stopped sending frames. Guidance pauses when frames stop. Reconnect the phone camera and restart REVISION.');
+  if (data.error || stale) {
+    notice(data.error || 'Camera feed interrupted. Guidance is paused while REVISION reconnects automatically.');
+    connectionNotice = true;
+  } else if (connectionNotice && ready) {
+    notice('');
+    connectionNotice = false;
+  }
   const placeholder = $('camera-placeholder');
   placeholder.style.display = data.frame_age_s !== null && !stale ? 'none' : 'flex';
   if (data.error) { placeholder.querySelector('strong').textContent = 'Let’s reconnect your camera'; placeholder.querySelector('span:last-child').textContent = data.error; }
@@ -66,7 +71,8 @@ async function poll() {
     if (!response.ok) throw new Error();
     show(await response.json());
   } catch {
-    notice('Lost connection to REVISION. Restart the local app, then refresh this page.');
+    notice('Lost connection to REVISION. Retrying automatically.');
+    connectionNotice = true;
     $('status').textContent = 'Disconnected'; $('talk').disabled = true; $('stop').disabled = true;
     $('rotate').disabled = true;
     for (const button of $('targets').children) button.disabled = true;
@@ -80,5 +86,5 @@ document.addEventListener('keydown',event => {
   if (event.repeat || ['INPUT','TEXTAREA','SELECT','BUTTON'].includes(event.target.tagName)) return;
   if (event.code === 'Escape' && !$('stop').disabled) action('stop');
 });
-document.addEventListener('visibilitychange',()=>{if(document.hidden && current.ready) action('stop');});
+document.addEventListener('visibilitychange',()=>{if(document.hidden && (current.ready || current.phase === 'RECONNECTING')) action('stop');});
 poll();
