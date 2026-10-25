@@ -247,6 +247,16 @@ class Guide:
             self.cmd = STOP
             self.band.send(STOP)
             return self.cmd
+        if not found and covering:
+            # Bounded hand-occlusion memory drives only the forward actuator.
+            # Fresh detection, hand loss, camera motion or expiry ends this path.
+            self._contact_since = None
+            if self.stabilizer is not None:
+                self.stabilizer.reset()
+            self.cmd = GuidanceCommand(Direction.FORWARD, 100, 0.0)
+            self.state = State.GUIDING
+            self.band.send(self.cmd)
+            return self.cmd
         self.cmd = self.compute(self.det, self.hand, frame.shape, self.config)
         # Overlap only proves alignment in the image. It must never override a
         # FORWARD/BACK command or confirm arrival from a remembered detection.

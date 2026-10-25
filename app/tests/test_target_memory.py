@@ -61,13 +61,14 @@ def test_covered_memory_does_not_arrive_even_with_depth():
         guide.follow(FRAME)
         assert guide.det == remembered
         assert guide.visibility == "occluded"
-        assert band.sent[-1].direction == Direction.STOP
+        assert band.sent[-1].direction == Direction.FORWARD
     assert said.count(voice_out.TARGET_COVERED.format("can")) == 1
     assert voice_out.ARRIVED not in said
     clock.t = OCCLUSION_MEMORY_S + 0.1
     guide.follow(FRAME)
     assert guide.det is None
     assert guide.state == State.SCANNING
+    assert band.sent[-1].direction == Direction.STOP
     clock.t = MISSING_NOTICE_S + NOTICE_GAP_S + 0.2
     guide.follow(FRAME)
     assert said[-1] == voice_out.LOOK_AROUND.format("can")
@@ -217,8 +218,41 @@ def test_stabilizer_cannot_replay_arrival_from_memory():
 
     guide.stabilizer = HoldingArrival()
     guide.follow(FRAME)
-    assert band.sent[-1].direction == Direction.STOP
+    assert band.sent[-1].direction == Direction.FORWARD
     assert voice_out.ARRIVED not in said
+
+
+def test_occlusion_forward_ends_when_hand_moves_or_target_returns():
+    guide, tracker, band, said, clock = ready()
+    tracker.pos = guide.det.center
+    guide.detector.found_after = None
+    guide.follow(FRAME)
+    assert band.sent[-1].direction == Direction.FORWARD
+    clock.t = MISSING_NOTICE_S + 0.1
+    guide.follow(FRAME)
+    assert said[-1] == voice_out.TARGET_COVERED.format("can")
+    assert voice_out.LOOK_AROUND.format("can") not in said
+    tracker.pos = (5, 5)
+    guide.follow(FRAME)
+    assert band.sent[-1].direction == Direction.STOP
+    tracker.pos = guide.det.center
+    guide.follow(FRAME)
+    assert band.sent[-1].direction == Direction.FORWARD
+    guide.detector.found_after = 0
+    guide.compute = lambda *args: GuidanceCommand(Direction.RIGHT, 180, 50)
+    guide.follow(FRAME)
+    assert band.sent[-1].direction == Direction.RIGHT
+
+
+def test_hand_loss_stops_occlusion_forward():
+    guide, tracker, band, _, _ = ready()
+    tracker.pos = guide.det.center
+    guide.detector.found_after = None
+    guide.follow(FRAME)
+    assert band.sent[-1].direction == Direction.FORWARD
+    tracker.visible = False
+    guide.follow(FRAME)
+    assert band.sent[-1].direction == Direction.STOP
 
 
 def test_repeated_target_flicker_does_not_repeat_lost_and_found_speech():
