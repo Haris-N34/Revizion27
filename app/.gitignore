@@ -1,0 +1,4 @@
+# Dedicated Sites checkout and generated deployment bundle.
+deployed/
+revision-site.tar.gz
+*.log

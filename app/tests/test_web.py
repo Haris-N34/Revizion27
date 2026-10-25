@@ -74,6 +74,15 @@ def test_cross_origin_commands_and_path_traversal_are_rejected(web_server):
     assert error.value.code == 404
 
 
+def test_https_tunnel_accepts_same_origin_controls(web_server):
+    state, url = web_server
+    state.update(ready=True, supported=["can"], voice=True)
+    host = "revision.example.com"
+    with post(url, "/api/stop", Host=host, Origin="https://" + host) as response:
+        assert response.status == 202
+    assert state.actions.get_nowait() == ("stop", None)
+
+
 def test_stream_contains_encoded_camera_frame(web_server):
     state, url = web_server
     WebViewer(state).show_frame(np.zeros((100, 160, 3), dtype=np.uint8))

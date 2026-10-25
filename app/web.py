@@ -245,7 +245,8 @@ def make_handler(state):
 
         def do_POST(self):
             origin = self.headers.get("Origin")
-            if origin and origin != "http://" + self.headers.get("Host", ""):
+            host = self.headers.get("Host", "")
+            if origin and origin not in ("http://" + host, "https://" + host):
                 self.send(403, b'{"error":"Use this app from its local browser page"}')
                 return
             if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
