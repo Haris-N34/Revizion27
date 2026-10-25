@@ -13,6 +13,8 @@ import numpy as np
 
 from shared.config import load_config
 
+INFERENCE_LOCK = threading.Lock()
+
 
 def decode_request(payload):
     session = payload.get("session", "")
@@ -102,9 +104,12 @@ class BrowserFrames:
         return future.result(timeout=45)
 
     def _analyze(self, args):
-        if self.analyzer is None:
-            self.analyzer = self.factory()
-        return self.analyzer.analyze(*args)
+        # Serialize model loading/inference with the laptop loop. Some native
+        # Torch backends crash when separate models warm up concurrently.
+        with INFERENCE_LOCK:
+            if self.analyzer is None:
+                self.analyzer = self.factory()
+            return self.analyzer.analyze(*args)
 
     def close(self):
         def release():

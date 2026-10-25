@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import pytest
 
-from app.browser_camera import BrowserAnalyzer, BrowserFrames, decode_request
+from app.browser_camera import BrowserAnalyzer, BrowserFrames, INFERENCE_LOCK, decode_request
 from shared.contracts import Detection, Direction, GuidanceCommand, HandPosition
 
 
@@ -68,5 +68,22 @@ def test_browser_service_does_not_queue_unlimited_frames():
         service.slot.release()
         assert service.submit(payload()) == {"detections": []}
         analyzer.analyze.assert_called_once()
+    finally:
+        service.close()
+
+
+def test_browser_model_initialization_waits_for_laptop_inference():
+    import threading
+    entered = threading.Event()
+    def factory():
+        entered.set()
+        return SimpleNamespace(analyze=lambda *args: {}, close=lambda: None)
+    service = BrowserFrames(factory=factory)
+    try:
+        with INFERENCE_LOCK:
+            job = service.executor.submit(service._analyze, decode_request(payload()))
+            assert not entered.wait(.05)
+        assert job.result(timeout=2) == {}
+        assert entered.is_set()
     finally:
         service.close()

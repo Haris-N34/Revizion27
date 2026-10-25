@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 
 from app import voice_out
-from app.browser_camera import BrowserFrames
+from app.browser_camera import BrowserFrames, INFERENCE_LOCK
 from app.fakes import FakeDetector, FakeHandTracker, PrintBand, fake_compute
 from app.loop import State
 from app.main import App, Viewer, camera_source
@@ -109,7 +109,8 @@ def run_camera(state, args):
     rotation = getattr(args, "rotation", 0)
     try:
         # App creates all camera/serial/model resources on this worker thread.
-        app = WebApp(args, build_parts=demo_parts if args.demo else None)
+        with INFERENCE_LOCK:
+            app = WebApp(args, build_parts=demo_parts if args.demo else None)
         original_say = app.speaker.say
 
         def say(text):
@@ -176,7 +177,8 @@ def run_camera(state, args):
             # Consume and discard a cancelled recording before App.frame can use it.
             if getattr(app, "_ignore_transcript", False) and app.listener:
                 app.listener.result()
-            app.frame(rotate_frame(frame, rotation))
+            with INFERENCE_LOCK:
+                app.frame(rotate_frame(frame, rotation))
             g = app.guide
             state.update(status=app.status(), phase=g.state.value, target=app.target,
                          hand=g.hand is not None, detected=g.det is not None,
