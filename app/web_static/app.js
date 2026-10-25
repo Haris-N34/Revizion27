@@ -16,6 +16,7 @@ async function action(name, payload = {}) {
   finally { requesting = false; }
 }
 function show(data) {
+  if (data.camera_mode && data.camera_mode !== current.camera_mode) $('camera-source').value = data.camera_mode;
   current = data;
   const stale = data.frame_age_s !== null && data.frame_age_s > 3;
   const ready = data.ready && !stale;
@@ -80,6 +81,7 @@ async function poll() {
   setTimeout(poll,500);
 }
 $('talk').onclick = () => action('listen');
+$('connect-camera').onclick = () => action('camera', {camera: $('camera-source').value});
 $('stop').onclick = () => action('stop');
 $('rotate').onclick = () => action('rotate',{rotation:((current.rotation || 0)+90)%360});
 document.addEventListener('keydown',event => {

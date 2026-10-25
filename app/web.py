@@ -110,6 +110,8 @@ def run_camera(state, args):
     rotation = getattr(args, "rotation", 0)
     reconnecting, resume_target = False, None
     next_open = 0.0
+    selected_source = {"configured": None, "webcam": 0, "usb": 1}[getattr(args, "camera", "configured")]
+    state.update(camera_mode=getattr(args, "camera", "configured"))
     try:
         # App creates all camera/serial/model resources on this worker thread.
         with INFERENCE_LOCK:
@@ -135,7 +137,21 @@ def run_camera(state, args):
                     action, value = state.actions.get_nowait()
                 except queue.Empty:
                     break
-                if action == "stop":
+                if action == "camera":
+                    stop_guidance(app)
+                    resume_target = None
+                    app.pending = None
+                    if cap is not None:
+                        cap.release()
+                    cap = None
+                    selected_source = {"configured": None, "webcam": 0, "usb": 1}[value]
+                    next_open = 0.0
+                    reconnecting = False
+                    state.update(camera_mode=value, ready=False, error=None)
+                    with state.condition:
+                        state.jpeg, state.last_frame = None, 0.0
+                    state.announce("Camera changed. Choose your target again when the live view returns.")
+                elif action == "stop":
                     stop_guidance(app)
                     resume_target = None
                     # Ignore an in-flight transcript after the user presses Stop.
@@ -172,7 +188,8 @@ def run_camera(state, args):
             else:
                 if cap is None and time.monotonic() >= next_open:
                     try:
-                        cap = open_camera(args.video or camera_source(app.config))
+                        source = selected_source if selected_source is not None else args.video or camera_source(app.config)
+                        cap = open_camera(source)
                         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                     except (OSError, ValueError, cv2.error) as exc:
                         state.update(error=str(exc))
@@ -320,13 +337,16 @@ def make_handler(state):
                     self.send(503, b'{"error":"Detection is warming up or busy. Retrying..."}')
                 return
             actions = {"/api/target": "target", "/api/listen": "listen",
-                       "/api/stop": "stop", "/api/rotate": "rotate"}
+                       "/api/stop": "stop", "/api/rotate": "rotate", "/api/camera": "camera"}
             action = actions.get(self.path)
             if action is None:
                 self.send(404, b'{"error":"Not found"}')
                 return
             data = state.snapshot()
-            if not data.get("ready") and action != "stop":
+            if action == "camera" and payload.get("camera") not in ("configured", "webcam", "usb"):
+                self.send(400, b'{"error":"Choose configured, webcam or usb"}')
+                return
+            if not data.get("ready") and action not in ("stop", "camera"):
                 self.send(409, b'{"error":"Camera is not ready yet"}')
                 return
             if action == "listen" and not data.get("voice"):
@@ -345,7 +365,7 @@ def make_handler(state):
                 self.send(409, b'{"error":"Wait until the voice request finishes"}')
                 return
             try:
-                value = payload.get("rotation") if action == "rotate" else payload.get("target")
+                value = payload.get("camera") if action == "camera" else payload.get("rotation") if action == "rotate" else payload.get("target")
                 state.actions.put_nowait((action, value))
             except queue.Full:
                 self.send(429, b'{"error":"Please wait for the previous command"}')
@@ -362,6 +382,8 @@ def main():
     parser.add_argument("--no-voice", action="store_true")
     parser.add_argument("--demo", action="store_true", help="synthetic camera and mock hardware")
     parser.add_argument("--video")
+    parser.add_argument("--camera", choices=("configured", "webcam", "usb"), default="configured",
+                        help="camera source; webcam and usb bypass DroidCam Wi-Fi")
     parser.add_argument("--target")
     parser.add_argument("--rotation", type=int, choices=(0, 90, 180, 270), default=0,
                         help="clockwise camera rotation before detection")

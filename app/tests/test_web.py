@@ -63,6 +63,17 @@ def test_controls_wait_for_camera_and_validate_target(web_server):
         assert state.actions.get_nowait() == expected
 
 
+def test_camera_backup_can_be_selected_while_disconnected(web_server):
+    state, url = web_server
+    for camera in ("webcam", "usb", "configured"):
+        with post(url, "/api/camera", {"camera": camera}) as response:
+            assert response.status == 202
+        assert state.actions.get_nowait() == ("camera", camera)
+    with pytest.raises(HTTPError) as error:
+        post(url, "/api/camera", {"camera": "invalid"})
+    assert error.value.code == 400
+
+
 def test_cross_origin_commands_and_path_traversal_are_rejected(web_server):
     state, url = web_server
     state.update(ready=True, supported=["can"], voice=True)
