@@ -18,7 +18,8 @@ from app.browser_camera import BrowserFrames, INFERENCE_LOCK
 from app.camera import DroidCamCapture, open_camera, RETRY_S
 from app.fakes import FakeDetector, FakeHandTracker, PrintBand, fake_compute
 from app.loop import State
-from app.main import App, Viewer, camera_source
+from app.main import App, Viewer, camera_source, build
+from app.reconnecting_band import ReconnectingBand
 
 STATIC = Path(__file__).with_name("web_static")
 
@@ -105,7 +106,25 @@ class WebApp(App):
             super().handle(text)
 
 
+def live_parts(config, mock_band):
+    return build(config, mock_band, band_factory=ReconnectingBand)
+
+
 def run_camera(state, args):
+    # Unexpected worker errors must not leave a permanently frozen server.
+    while not state.shutdown.is_set():
+        try:
+            run_camera_once(state, args)
+        except Exception as exc:
+            state.update(ready=False, error=str(exc), status="Restarting camera")
+            print(f"[web] recovering camera worker: {exc}", flush=True)
+        if not state.shutdown.is_set():
+            with state.condition:
+                state.jpeg, state.last_frame = None, 0.0
+            state.shutdown.wait(RETRY_S)
+
+
+def run_camera_once(state, args):
     app, cap = None, None
     rotation = getattr(args, "rotation", 0)
     reconnecting, resume_target = False, None
@@ -115,7 +134,7 @@ def run_camera(state, args):
     try:
         # App creates all camera/serial/model resources on this worker thread.
         with INFERENCE_LOCK:
-            app = WebApp(args, build_parts=demo_parts if args.demo else None)
+            app = WebApp(args, build_parts=demo_parts if args.demo else live_parts)
         original_say = app.speaker.say
 
         def say(text):
@@ -240,6 +259,9 @@ def run_camera(state, args):
             with INFERENCE_LOCK:
                 app.frame(rotate_frame(frame, rotation))
             g = app.guide
+            band = app.parts.band
+            state.update(arduino=getattr(band, "connected", app.parts.real_band),
+                         band_error=getattr(band, "error", None))
             state.update(status=app.status(), phase=g.state.value, target=app.target,
                          target_visibility=getattr(g, "visibility", "visible"),
                          hand=g.hand is not None, detected=g.det is not None,
@@ -249,15 +271,17 @@ def run_camera(state, args):
         state.update(ready=False, error=str(exc), status="Connection needs attention")
         print(f"[web] {exc}", flush=True)
     finally:
+        if cap is not None:
+            cap.release()
         if app:
             try:
                 app.guide.stop()
+            except (OSError, RuntimeError) as exc:
+                print(f"[web] wristband cleanup: {exc}", flush=True)
             finally:
                 if hasattr(app.parts.tracker, "close"):
                     app.parts.tracker.close()
                 app.speaker.close()
-        if cap is not None:
-            cap.release()
         state.update(ready=False)
 
 

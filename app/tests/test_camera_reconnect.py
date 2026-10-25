@@ -9,6 +9,22 @@ from shared.config import DEFAULTS
 from shared.contracts import Direction
 
 
+def test_camera_supervisor_restarts_failed_worker(monkeypatch):
+    state = web.WebState()
+    calls = []
+
+    def run_once(state, args):
+        calls.append(1)
+        if len(calls) == 1:
+            raise OSError("unexpected worker failure")
+        state.shutdown.set()
+
+    monkeypatch.setattr(web, "run_camera_once", run_once)
+    monkeypatch.setattr(web, "RETRY_S", 0.001)
+    web.run_camera(state, None)
+    assert len(calls) == 2
+
+
 def wait_for(state, predicate):
     deadline = time.monotonic() + 4
     while time.monotonic() < deadline:

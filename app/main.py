@@ -33,7 +33,7 @@ class Quit(Exception):
     pass
 
 
-def build(config: dict, mock_band: bool) -> SimpleNamespace:
+def build(config: dict, mock_band: bool, *, band_factory=None) -> SimpleNamespace:
     """Real modules where available, fakes otherwise; .fakes lists the fakes in use."""
     fakes = []
     try:
@@ -59,7 +59,7 @@ def build(config: dict, mock_band: bool) -> SimpleNamespace:
         from hardware.host.band import Band, MockBand
 
         real_band = not mock_band and bool(config.get("serial_port"))
-        band = Band(config) if real_band else MockBand(config)
+        band = (band_factory or Band)(config) if real_band else MockBand(config)
     except ImportError:
         band, real_band = PrintBand(config), False
         fakes.append("PrintBand")
