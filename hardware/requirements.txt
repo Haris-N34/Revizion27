@@ -1,1 +1,1 @@
-# hardware dependencies (owner adds them)
+pyserial>=3.5,<4

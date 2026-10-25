@@ -1,0 +1,1 @@
+{"detection":{"label":"can","confidence":0.9,"x1":400,"y1":200,"x2":440,"y2":240,"frame_id":1},"hand":{"x":100,"y":300,"wrist_x":100,"wrist_y":340,"handedness":"Right","frame_id":1},"frame_shape":[480,640,3]}
