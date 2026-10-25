@@ -8,6 +8,11 @@ def test_format():
     with pytest.raises(ValueError):
         _encode(GuidanceCommand(Direction.UP, 256, 0))
 
+
+@pytest.mark.parametrize("direction", [Direction.BACK, Direction.UP, Direction.DOWN])
+def test_unavailable_directions_stop_instead_of_driving_a_servo(direction):
+    assert _encode(GuidanceCommand(direction, 200, 50)) == b"S,0\n"
+
 def test_resend_rate_and_close():
     serial = Mock(in_waiting=0)
     serial.write.side_effect = lambda value: len(value)

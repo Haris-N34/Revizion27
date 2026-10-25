@@ -6,29 +6,31 @@ Manufacturer specifications: https://www.dfrobot.com.cn/goods-1174.html
 
 | Guidance | Servo signal pin |
 | --- | --- |
-| Right (`R`) | 10 |
-| Top/up (`U`) | 11 |
-| Left (`L`) | 9 |
-| Bottom/down (`D`) | 8 |
+| Left (`L`) | 8 |
+| Right (`R`) | 9 |
+| Forward (`F`) | 10 |
 | Talk button (input) | 12 |
 
-The button is LOW when released and HIGH when pressed. Pin 12 uses `INPUT`,
-with the existing external pull-down/button circuit (no internal pull-up).
+Pin 12 uses `INPUT_PULLUP` and learns its released level after 250 ms of
+startup, with at least 100 ms stable. Keep the button released during reset
+and USB reconnection. A press is a change away from that learned level;
+this supports a switch to GND or an existing externally pulled-down circuit.
 A stable press for 30 ms sends `BTN,1\r\n` over the same USB serial connection.
 Holding the button sends no repeats; release for 30 ms before pressing again.
 The host preserves these events while discarding `OK`/`ERR` acknowledgements.
 Press once, speak into the laptop microphone, then pause to finish the request.
 
-Diagonals activate both corresponding servos. Left/right are already mapped
-by guidance; firmware does not mirror them again. Depth `F` pulses all four
-quickly, `B` uses long pulses. `G` gives two long pulses; `X` three quick taps.
+Diagonals use their left or right component. Left/right are already mapped
+by guidance; firmware does not mirror them again. `F` pulses only pin 10.
+There is no reverse or vertical actuator; the host converts unavailable
+directions to STOP. `G` gives two long pulses on all three; `X` three quick taps.
 Repeated commands keep the watchdog alive without restarting these patterns.
 `S`, zero intensity and 500 ms without a valid command detach all servos.
 Detaching removes the signal; it does not switch off the external power supply.
 
 Use an external regulated supply rated for your servo voltage and total stall
 current. Connect servo grounds, supply ground and Arduino GND together; only
-the signal wires go to pins 8–11. USB powers the Arduino.
+the signal wires go to pins 8, 9 and 10. Pin 11 is unused. USB powers the Arduino.
 Reference: https://docs.arduino.cc/learn/electronics/servo-motors/
 
 The sketch assumes ordinary positional servos, resting at 90 degrees, moving

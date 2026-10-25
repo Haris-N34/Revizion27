@@ -8,6 +8,9 @@ def _encode(cmd):
     direction = Direction(cmd.direction)
     if isinstance(cmd.intensity, bool) or not isinstance(cmd.intensity, int) or not 0 <= cmd.intensity <= 255:
         raise ValueError("Intensity must be an integer from 0 to 255")
+    # This band has only left, right and forward actuators.
+    if direction in (Direction.BACK, Direction.UP, Direction.DOWN):
+        direction = Direction.STOP
     intensity = 0 if direction == Direction.STOP else cmd.intensity
     return f"{direction.value},{intensity}\n".encode("ascii")
 

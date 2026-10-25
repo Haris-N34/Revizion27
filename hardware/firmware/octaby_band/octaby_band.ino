@@ -2,15 +2,18 @@
 #include <string.h>
 
 // Positional servos: signal pins, in user-facing direction order.
-const byte PINS[] = {10, 11, 9, 8}; // right, up, left, bottom (down)
-const byte REST[] = {90, 90, 90, 90};
+const byte PINS[] = {8, 9, 10}; // left, right, forward
+const byte SERVO_COUNT = sizeof(PINS) / sizeof(PINS[0]);
+const byte REST[] = {90, 90, 90};
 const byte MAX_SWING = 12; // degrees either side of rest; calibrate off-wrist
 const unsigned long WATCHDOG_MS = 500;
-const byte BUTTON_PIN = 12; // externally pulled LOW; HIGH when pressed
+const byte BUTTON_PIN = 12;
 const unsigned long BUTTON_DEBOUNCE_MS = 30;
 bool buttonRaw = false, buttonPressed = false;
+bool buttonReady = false;
+byte buttonIdle = HIGH;
 unsigned long buttonChanged = 0;
-Servo servos[4];
+Servo servos[SERVO_COUNT];
 char direction[3] = "S";
 byte intensity = 0;
 unsigned long lastValid = 0, started = 0;
@@ -19,22 +22,16 @@ byte used = 0;
 bool overflowed = false;
 
 byte maskFor(const char *d) {
-  if (!strcmp(d, "R")) return 1;
-  if (!strcmp(d, "U")) return 2;
-  if (!strcmp(d, "L")) return 4;
-  if (!strcmp(d, "D")) return 8;
-  if (!strcmp(d, "UR")) return 3;
-  if (!strcmp(d, "UL")) return 6;
-  if (!strcmp(d, "DR")) return 9;
-  if (!strcmp(d, "DL")) return 12;
-  if (!strcmp(d, "G") || !strcmp(d, "X") ||
-      !strcmp(d, "F") || !strcmp(d, "B")) return 15;
+  if (!strcmp(d, "L") || !strcmp(d, "UL") || !strcmp(d, "DL")) return 1;
+  if (!strcmp(d, "R") || !strcmp(d, "UR") || !strcmp(d, "DR")) return 2;
+  if (!strcmp(d, "F")) return 4;
+  if (!strcmp(d, "G") || !strcmp(d, "X")) return 7;
   return 0;
 }
 
 void stopServos() {
   // Remove control pulses, including on watchdog expiry.
-  for (byte i = 0; i < 4; ++i) {
+  for (byte i = 0; i < SERVO_COUNT; ++i) {
     servos[i].detach();
     digitalWrite(PINS[i], LOW);
   }
@@ -64,14 +61,25 @@ bool acceptLine(unsigned long now) {
 
 void setup() {
   Serial.begin(115200);
-  pinMode(BUTTON_PIN, INPUT); // preserve the button's active-HIGH wiring
-  for (byte i = 0; i < 4; ++i) pinMode(PINS[i], OUTPUT);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  // Learn the released level after startup; keep the button released on reset.
+  buttonIdle = digitalRead(BUTTON_PIN);
+  buttonChanged = millis();
+  for (byte i = 0; i < SERVO_COUNT; ++i) pinMode(PINS[i], OUTPUT);
   stopServos();
 }
 
 void loop() {
   unsigned long now = millis();
-  bool pressed = digitalRead(BUTTON_PIN) == HIGH;
+  byte level = digitalRead(BUTTON_PIN);
+  if (!buttonReady) {
+    if (level != buttonIdle) {
+      buttonIdle = level;
+      buttonChanged = now;
+    }
+    if (now >= 250 && now - buttonChanged >= 100) buttonReady = true;
+  }
+  bool pressed = buttonReady && level != buttonIdle;
   if (pressed != buttonRaw) {
     buttonRaw = pressed;
     buttonChanged = now;
@@ -108,8 +116,7 @@ void loop() {
   else if (!strcmp(direction, "F")) {
     unsigned int period = 160 + intensity; // closer -> faster
     active = elapsed % period < period / 2;
-  } else if (!strcmp(direction, "B"))
-    active = elapsed % 900 < 650;
+  }
   if (!mask || !intensity ||
       ((!strcmp(direction, "G") && elapsed >= 1000) ||
        (!strcmp(direction, "X") && elapsed >= 450))) {
@@ -118,7 +125,7 @@ void loop() {
   }
   byte swing = 3 + (unsigned int)intensity * (MAX_SWING - 3) / 255;
   int offset = active ? ((elapsed / 50) % 2 ? swing : -swing) : 0;
-  for (byte i = 0; i < 4; ++i) {
+  for (byte i = 0; i < SERVO_COUNT; ++i) {
     if (mask & (1 << i)) {
       // Set target before attaching to avoid an old target on reattachment.
       servos[i].write(REST[i] + offset);
