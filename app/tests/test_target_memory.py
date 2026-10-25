@@ -5,7 +5,10 @@ import numpy as np
 import pytest
 
 from app import voice_out
-from app.loop import CONTACT_HOLD_S, MISSING_NOTICE_S, OCCLUSION_MEMORY_S, SEARCH_REMINDER_S, State
+from app.loop import (
+    CONTACT_HOLD_S, HAND_LOST_AFTER_S, MISSING_NOTICE_S, NOTICE_GAP_S,
+    OCCLUSION_MEMORY_S, REACQUIRE_HOLD_S, SEARCH_REMINDER_S, State,
+)
 from app.scene_motion import SceneMotion
 from app.tests.test_loop import FRAME, make
 from shared.contracts import Direction, GuidanceCommand
@@ -65,6 +68,8 @@ def test_covered_memory_does_not_arrive_even_with_depth():
     guide.follow(FRAME)
     assert guide.det is None
     assert guide.state == State.SCANNING
+    clock.t = MISSING_NOTICE_S + NOTICE_GAP_S + 0.2
+    guide.follow(FRAME)
     assert said[-1] == voice_out.LOOK_AROUND.format("can")
 
 
@@ -84,6 +89,9 @@ def test_lost_target_prompts_search_and_announces_reacquisition():
     guide.detector.found_after = 0
     for _ in range(guide.detector.confirm_frames + 1):
         guide.follow(FRAME)
+    assert voice_out.TARGET_AGAIN.format("can") not in said
+    clock.t += NOTICE_GAP_S + REACQUIRE_HOLD_S + 0.1
+    guide.follow(FRAME)
     assert said.count(voice_out.TARGET_AGAIN.format("can")) == 1
     assert guide.visibility == "visible"
     assert guide.state == State.GUIDING
@@ -211,3 +219,78 @@ def test_stabilizer_cannot_replay_arrival_from_memory():
     guide.follow(FRAME)
     assert band.sent[-1].direction == Direction.STOP
     assert voice_out.ARRIVED not in said
+
+
+def test_repeated_target_flicker_does_not_repeat_lost_and_found_speech():
+    guide, _, _, said, clock = ready()
+    for cycle in range(6):
+        clock.t = cycle * 1.0
+        guide.detector.found_after = None
+        guide.follow(FRAME)
+        clock.t += MISSING_NOTICE_S + 0.1
+        guide.follow(FRAME)
+        guide.detector.found_after = 0
+        guide.follow(FRAME)
+    assert said.count(voice_out.LOOK_AROUND.format("can")) == 1
+    assert voice_out.TARGET_AGAIN.format("can") not in said
+
+
+def test_lifting_covering_hand_is_silent_even_after_long_pause():
+    guide, tracker, _, said, clock = ready()
+    tracker.pos = guide.det.center
+    guide.detector.found_after = None
+    guide.follow(FRAME)
+    clock.t = MISSING_NOTICE_S + 0.1
+    guide.follow(FRAME)
+    guide.detector.found_after = 0
+    clock.t = NOTICE_GAP_S + 0.1
+    tracker.pos = (5, 5)
+    guide.follow(FRAME)
+    clock.t += REACQUIRE_HOLD_S + 0.1
+    for _ in range(4):
+        guide.follow(FRAME)
+    assert voice_out.TARGET_AGAIN.format("can") not in said
+    assert guide._last_notice is None
+
+
+def test_quick_stable_return_clears_search_notice_silently():
+    guide, _, _, said, clock = ready()
+    guide.detector.found_after = None
+    guide.follow(FRAME)
+    clock.t = MISSING_NOTICE_S + 0.1
+    guide.follow(FRAME)
+    guide.detector.found_after = 0
+    guide.follow(FRAME)
+    clock.t += REACQUIRE_HOLD_S + 0.1
+    for _ in range(3):
+        guide.follow(FRAME)
+    assert voice_out.TARGET_AGAIN.format("can") not in said
+    assert guide._last_notice is None
+
+
+def test_one_frame_hand_recovery_does_not_rearm_lost_warning():
+    guide, tracker, _, said, clock = ready()
+    tracker.visible = False
+    guide.follow(FRAME)
+    clock.t = HAND_LOST_AFTER_S + 0.1
+    guide.follow(FRAME)
+    assert said.count(voice_out.HAND_LOST) == 1
+    tracker.visible = True
+    clock.t += 0.1
+    guide.follow(FRAME)
+    tracker.visible = False
+    clock.t += 0.1
+    guide.follow(FRAME)
+    clock.t += NOTICE_GAP_S + HAND_LOST_AFTER_S
+    guide.follow(FRAME)
+    assert said.count(voice_out.HAND_LOST) == 1
+
+
+def test_depth_check_does_not_rearm_when_alignment_flickers():
+    guide, tracker, _, said, clock = ready()
+    center = guide.det.center
+    for i in range(8):
+        tracker.pos = center if i % 2 else (5, 5)
+        clock.t = i
+        guide.follow(FRAME)
+    assert said.count(voice_out.CHECK_DEPTH) == 1

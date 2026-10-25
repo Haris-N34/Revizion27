@@ -23,6 +23,10 @@ OCCLUSION_MEMORY_S = 6.0  # bounded memory while the hand covers the remembered 
 CONTACT_HOLD_S = 0.6  # fresh, depth-supported arrival must persist this long
 MISSING_NOTICE_S = 0.6
 SEARCH_REMINDER_S = 8.0
+REACQUIRE_HOLD_S = 1.0
+REACQUIRE_FRAMES = 3
+NOTICE_GAP_S = 8.0
+HAND_RECOVERY_S = 1.0
 
 
 def _inside(x: float, y: float, d: Detection, margin: float = 0.0) -> bool:
@@ -113,6 +117,12 @@ class Guide:
         self._memory_moved = False
         self._last_notice = None
         self._notice_at = float("-inf")
+        self._target_notice_at = float("-inf")
+        self._hand_notice_at = float("-inf")
+        self._visible_since = None
+        self._visible_frames = 0
+        self._hand_visible_since = None
+        self._depth_warned = False
 
     def start(self, target: str, announce: bool = True) -> None:
         """Continuously look for a target until the user changes it or quits."""
@@ -129,6 +139,10 @@ class Guide:
         self._missing_since = None
         self._last_notice = None
         self._notice_at = float("-inf")
+        self._target_notice_at = self._hand_notice_at = float("-inf")
+        self._visible_since = self._hand_visible_since = None
+        self._visible_frames = 0
+        self._depth_warned = False
         self._lost_since, self._warned_lost = None, False
         self.turning, self.rescan_requested = False, False
         if self.stabilizer is not None:
@@ -151,15 +165,27 @@ class Guide:
         shift = self._motion.update(frame, exclusions)
         covering = self.det is not None and _covering(self.hand, self.det)
         if found:
+            if self._visible_since is None:
+                self._visible_since = now
+            self._visible_frames += 1
             self._seen_at = now
             self._camera_drift[:] = 0
             self._memory_moved = False
             self._missing_since = None
-            if self._last_notice in ("covered", "search"):
-                self.say(voice_out.TARGET_AGAIN.format(self.target))
+            stable_return = (
+                self._visible_frames >= REACQUIRE_FRAMES
+                and now - self._visible_since >= REACQUIRE_HOLD_S
+            )
+            if stable_return and self._last_notice in ("covered", "search"):
+                # Lifting a covering hand needs no "found again" announcement.
+                # Quick returns after a search warning stay quiet as well.
+                if self._last_notice == "search" and now - self._target_notice_at >= NOTICE_GAP_S:
+                    self.say(voice_out.TARGET_AGAIN.format(self.target))
+                    self._target_notice_at = now
                 self._last_notice = None
             self.visibility = "visible"
         else:
+            self._visible_since, self._visible_frames = None, 0
             if self._missing_since is None:
                 self._missing_since = now
             if shift is not None:
@@ -175,13 +201,14 @@ class Guide:
             if now - self._missing_since >= MISSING_NOTICE_S:
                 notice = "covered" if covered else "search"
                 reminder = notice == "search" and now - self._notice_at >= SEARCH_REMINDER_S
-                if notice != self._last_notice or reminder:
+                if (notice != self._last_notice or reminder) and now - self._target_notice_at >= NOTICE_GAP_S:
                     text = (
                         voice_out.TARGET_COVERED.format(self.target)
                         if covered else self._search_message(old, frame.shape)
                     )
                     self.say(text)
                     self._last_notice, self._notice_at = notice, now
+                    self._target_notice_at = now
         if not found and self._memory_moved:
             memory = 0  # stale image coordinates are unsafe after the camera moves
         if not found and (self.det is None or age > memory):
@@ -189,7 +216,6 @@ class Guide:
             self._confirmed = 0
             self._contact_since = None
             self.state = State.SCANNING
-            self._lost_since, self._warned_lost = None, False
             if self.stabilizer is not None:
                 self.stabilizer.reset()
             self.band.send(STOP)
@@ -251,11 +277,9 @@ class Guide:
             self._contact_since = None
             if contact:
                 self.cmd = STOP
-                if found and self._last_notice != "depth":
+                if found and not self._depth_warned:
                     self.say(voice_out.CHECK_DEPTH)
-                    self._last_notice = "depth"
-            elif found and self._last_notice == "depth":
-                self._last_notice = None
+                    self._depth_warned = True
         arrival_allowed = self.cmd.direction == Direction.ARRIVED
         if self.stabilizer is not None:
             if self.cmd.direction == Direction.STOP:
@@ -380,15 +404,27 @@ class Guide:
             self._missing_since = self.clock()
 
     def _check_lost(self) -> None:
-        if self.cmd.direction != Direction.LOST:
-            self._lost_since, self._warned_lost = None, False
-            return
         now = self.clock()
+        if self.cmd.direction != Direction.LOST:
+            self._lost_since = None
+            if self.hand is not None:
+                if self._hand_visible_since is None:
+                    self._hand_visible_since = now
+                if now - self._hand_visible_since >= HAND_RECOVERY_S:
+                    self._warned_lost = False
+            else:
+                self._hand_visible_since = None
+            return
+        self._hand_visible_since = None
         if self._lost_since is None:
             self._lost_since = now
-        elif not self._warned_lost and now - self._lost_since > HAND_LOST_AFTER_S:
+        elif (
+            not self._warned_lost and now - self._lost_since > HAND_LOST_AFTER_S
+            and now - self._hand_notice_at >= NOTICE_GAP_S
+        ):
             self.say(voice_out.HAND_LOST)
             self._warned_lost = True
+            self._hand_notice_at = now
 
     def cancel(self) -> None:
         """Abandon the current guidance (user asked for something else)."""
