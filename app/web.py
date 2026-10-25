@@ -92,6 +92,11 @@ def rotate_frame(frame, angle):
 
 
 class WebApp(App):
+    def ask(self):
+        if self.listener is not None and self.listener.state == "idle":
+            self._ignore_transcript = False
+        super().ask()
+
     def handle(self, text):
         if not getattr(self, "_ignore_transcript", False):
             super().handle(text)

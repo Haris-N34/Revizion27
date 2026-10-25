@@ -2,9 +2,9 @@
                    [--say-directions auto/on/off]
 
 Live view: target box, hand skeleton, hand-to-target line and band command.
-SPACE: ask out loud ("where is the can?").  q / Esc: quit.
+Arduino button: ask out loud ("where is the can?").  q / Esc: quit.
 Detection and guidance continue automatically while the target is visible.
-Without --target press SPACE to talk. --no-voice types instead of talking.
+Without --target press the wristband button to talk. --no-voice types instead of talking.
 """
 
 import argparse
@@ -26,7 +26,7 @@ from vision.yolo.runtime.detector import ObjectDetector
 
 WINDOW = "REVISION"
 STALL_S = 3.0  # a frame slower than this dumps every thread's stack to the terminal
-SPACE, QUIT_KEYS = ord(" "), (ord("q"), 27)
+QUIT_KEYS = (ord("q"), 27)
 
 
 class Quit(Exception):
@@ -179,6 +179,11 @@ class App:
         self.pending: str | None = None  # target to scan for on the next frame
 
     # --- input -------------------------------------------------------------
+    def poll_button(self) -> None:
+        poll = getattr(self.parts.band, "poll_button", None)
+        if poll is not None and poll() and self.listener is not None:
+            self.ask()
+
     def ask(self) -> None:
         """Start listening (voice) or read the keyboard (--no-voice)."""
         if self.listener is not None and self.listener.state != "idle":
@@ -217,7 +222,7 @@ class App:
             State.DONE: "Object found",
             State.NOT_FOUND: f"NOT FOUND: {self.target}",
             State.SCANNING: f"looking for {self.target}",
-            State.IDLE: "press SPACE and ask",
+            State.IDLE: "press the wristband button and ask",
         }.get(self.guide.state, self.guide.state.value)
 
     def run(self) -> None:
@@ -257,6 +262,7 @@ class App:
             self.parts.tracker.goal = found.center
 
     def frame(self, frame) -> None:
+        self.poll_button()
         g = self.guide
         if self.target:
             g.follow(frame)
@@ -274,15 +280,12 @@ class App:
             g.hand = g.tracker.track(frame)
         landmarks = getattr(g.tracker, "landmarks", None)
         cmd = g.cmd if g.state == State.GUIDING else None
-        hint = "continuous detection   SPACE: talk   q: quit"
+        hint = "continuous detection   wristband button: talk   q: quit"
         image = render(
             frame, self.status(), g.det, g.hand, landmarks, cmd, self.viewer.fps, hint,
             status_color=GREEN if g.state == State.DONE else RED,
         )
-        key = self.viewer.show_frame(image)
-
-        if key == SPACE:
-            self.ask()
+        self.viewer.show_frame(image)
         if self.listener:
             text = self.listener.result()
             if text is not None:

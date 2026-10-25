@@ -9,7 +9,7 @@ def test_camera_source_number_or_url():
     assert camera_source({"camera_index": f" {url} "}) == url
 
 
-def test_space_stops_old_guidance_before_listening():
+def test_button_stops_old_guidance_before_listening():
     from types import SimpleNamespace
     from app.main import App
 
@@ -21,18 +21,32 @@ def test_space_stops_old_guidance_before_listening():
     app.speaker = SimpleNamespace(
         say=lambda text: events.append(text), wait=lambda: events.append("wait")
     )
-    app.ask()
+    app.parts = SimpleNamespace(band=SimpleNamespace(poll_button=lambda: True))
+    app.poll_button()
     assert app.target is None and app.pending is None
     assert events == ["stop", "Listening.", "wait", "listen"]
 
 
-def test_repeated_space_does_not_restart_busy_listener():
+def test_button_does_not_restart_busy_listener():
     from types import SimpleNamespace
     from app.main import App
 
     app = App.__new__(App)
     app.listener = SimpleNamespace(state="recording")
-    app.ask()  # must return without cancelling or starting another recording
+    app.parts = SimpleNamespace(band=SimpleNamespace(poll_button=lambda: True))
+    app.poll_button()  # must return without cancelling or starting another recording
+
+
+def test_mock_band_and_disabled_voice_do_not_start_listening():
+    from types import SimpleNamespace
+    from app.main import App
+
+    app = App.__new__(App)
+    app.parts = SimpleNamespace(band=SimpleNamespace())
+    app.poll_button()
+    app.parts.band.poll_button = lambda: True
+    app.listener = None
+    app.poll_button()
 
 
 def test_recognized_request_is_acknowledged_before_detection():

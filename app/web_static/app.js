@@ -31,7 +31,7 @@ function show(data) {
   $('talk').disabled = !ready || !data.voice || ['recording','transcribing'].includes(data.listening);
   $('talk').classList.toggle('recording', data.listening === 'recording');
   $('talk-label').textContent = data.listening === 'recording' ? 'Listening…' : data.listening === 'transcribing' ? 'Recognizing…' : 'Press to talk';
-  $('voice-help').textContent = data.ready && !data.voice ? 'Voice is off for this session. Choose a target above.' : 'Press Space, say “find a can,” then pause.';
+  $('voice-help').textContent = data.ready && !data.voice ? 'Voice is off for this session. Choose a target above.' : 'Press the wristband button, say “find a can,” then pause.';
   $('stop').disabled = !data.ready;
   $('rotate').disabled = !ready || ['recording','transcribing'].includes(data.listening);
   $('rotate').textContent = `↻ Rotate camera · ${data.rotation || 0}°`;
@@ -78,7 +78,6 @@ $('stop').onclick = () => action('stop');
 $('rotate').onclick = () => action('rotate',{rotation:((current.rotation || 0)+90)%360});
 document.addEventListener('keydown',event => {
   if (event.repeat || ['INPUT','TEXTAREA','SELECT','BUTTON'].includes(event.target.tagName)) return;
-  if (event.code === 'Space') {event.preventDefault(); if (!$('talk').disabled) action('listen');}
   if (event.code === 'Escape' && !$('stop').disabled) action('stop');
 });
 document.addEventListener('visibilitychange',()=>{if(document.hidden && current.ready) action('stop');});
