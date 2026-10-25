@@ -6,4 +6,4 @@ Upload `firmware/octaby_band/octaby_band.ino` using Arduino IDE and the Servo li
 Input JSON lines contain detection, hand (nullable), and frame_shape from the same frame.
 Call Band.send every frame; unchanged commands resend after 200 ms, capped at 30 Hz.
 Closing sends STOP; firmware must implement the 500 ms watchdog.
-Pins: right 8, top 9, left 10, back/down 11, active-HIGH talk button 12; see wiring.md for power and calibration.
+Pins: top/up 8, right 9, bottom/down 10, left 11, active-HIGH talk button 12; see wiring.md for power and calibration.
