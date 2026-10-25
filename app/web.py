@@ -15,6 +15,7 @@ import numpy as np
 
 from app import voice_out
 from app.browser_camera import BrowserFrames, INFERENCE_LOCK
+from app.camera import DroidCamCapture, open_camera, RETRY_S
 from app.fakes import FakeDetector, FakeHandTracker, PrintBand, fake_compute
 from app.loop import State
 from app.main import App, Viewer, camera_source
@@ -107,6 +108,10 @@ class WebApp(App):
 def run_camera(state, args):
     app, cap = None, None
     rotation = getattr(args, "rotation", 0)
+    reconnecting, resume_target = False, None
+    next_open = 0.0
+    selected_source = {"configured": None, "webcam": 0, "usb": 1}[getattr(args, "camera", "configured")]
+    state.update(camera_mode=getattr(args, "camera", "configured"))
     try:
         # App creates all camera/serial/model resources on this worker thread.
         with INFERENCE_LOCK:
@@ -120,12 +125,7 @@ def run_camera(state, args):
         app.speaker.say = say
         app.guide.say = say
         app.viewer = WebViewer(state)
-        if not args.demo:
-            cap = cv2.VideoCapture(args.video or camera_source(app.config))
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            if not cap.isOpened():
-                raise RuntimeError("Cannot open the camera. Reconnect the phone camera, then restart the app.")
-        state.update(ready=True, supported=app.parts.supported,
+        state.update(ready=args.demo, supported=app.parts.supported,
                      voice=app.listener is not None, arduino=app.parts.real_band,
                      demo=args.demo, rotation=rotation)
         if args.target:
@@ -137,8 +137,23 @@ def run_camera(state, args):
                     action, value = state.actions.get_nowait()
                 except queue.Empty:
                     break
-                if action == "stop":
+                if action == "camera":
                     stop_guidance(app)
+                    resume_target = None
+                    app.pending = None
+                    if cap is not None:
+                        cap.release()
+                    cap = None
+                    selected_source = {"configured": None, "webcam": 0, "usb": 1}[value]
+                    next_open = 0.0
+                    reconnecting = False
+                    state.update(camera_mode=value, ready=False, error=None)
+                    with state.condition:
+                        state.jpeg, state.last_frame = None, 0.0
+                    state.announce("Camera changed. Choose your target again when the live view returns.")
+                elif action == "stop":
+                    stop_guidance(app)
+                    resume_target = None
                     # Ignore an in-flight transcript after the user presses Stop.
                     app._ignore_transcript = True
                 elif action == "listen":
@@ -160,7 +175,7 @@ def run_camera(state, args):
             if time.monotonic() - state.last_client > 3 and app.target:
                 stop_guidance(app)
                 state.announce("Guidance paused: browser disconnected.")
-            if app.pending:
+            if app.pending and not reconnecting:
                 app.target, app.pending = app.pending, None
                 app.guide.start(app.target, announce=False)
             if args.demo:
@@ -171,9 +186,54 @@ def run_camera(state, args):
                     app.parts.tracker.goal = app.guide.det.center
                 state.shutdown.wait(1 / 20)
             else:
-                ok, frame = cap.read()
+                if cap is None and time.monotonic() >= next_open:
+                    try:
+                        source = selected_source if selected_source is not None else args.video or camera_source(app.config)
+                        cap = open_camera(source)
+                        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    except (OSError, ValueError, cv2.error) as exc:
+                        state.update(error=str(exc))
+                    next_open = time.monotonic() + RETRY_S
+                try:
+                    ok, frame = cap.read() if cap is not None else (False, None)
+                except (OSError, cv2.error):
+                    ok, frame = False, None
                 if not ok:
-                    raise RuntimeError("Camera disconnected. Reconnect it and restart the app.")
+                    if args.video:
+                        raise RuntimeError("Video ended or cannot be read.")
+                    if not reconnecting:
+                        resume_target = app.target or app.pending
+                        stop_guidance(app)
+                        app.guide.hand = None
+                        app._ignore_transcript = True
+                        app.viewer._last = time.perf_counter()
+                        app.viewer.fps = 0
+                        state.announce("Camera disconnected. Guidance paused; reconnecting automatically.")
+                        reconnecting = True
+                    message = getattr(cap, "error", None) or "Reconnecting camera. Keep the phone camera open."
+                    with state.condition:
+                        state.jpeg, state.last_frame = None, 0.0
+                    state.update(ready=False, status="Reconnecting camera", error=message,
+                                 target=resume_target, hand=False, detected=False,
+                                 direction=None, phase="RECONNECTING", fps=0,
+                                 listening="paused")
+                    if cap is not None and not isinstance(cap, DroidCamCapture):
+                        cap.release()
+                        cap = None
+                    state.shutdown.wait(0.1)
+                    continue
+                if reconnecting:
+                    # Reacquire the object from scratch; pre-disconnect image
+                    # coordinates and in-flight voice transcripts are no longer valid.
+                    if app.listener:
+                        app.listener.result()
+                    app._ignore_transcript = app.listener is not None and app.listener.state != "idle"
+                    if resume_target and time.monotonic() - state.last_client <= 3:
+                        app.target = resume_target
+                        app.guide.start(resume_target, announce=False)
+                    resume_target, reconnecting = None, False
+                    state.announce("Camera reconnected. Live view restored.")
+                state.update(ready=True, error=None)
             # Consume and discard a cancelled recording before App.frame can use it.
             if getattr(app, "_ignore_transcript", False) and app.listener:
                 app.listener.result()
@@ -181,6 +241,7 @@ def run_camera(state, args):
                 app.frame(rotate_frame(frame, rotation))
             g = app.guide
             state.update(status=app.status(), phase=g.state.value, target=app.target,
+                         target_visibility=getattr(g, "visibility", "visible"),
                          hand=g.hand is not None, detected=g.det is not None,
                          direction=g.cmd.direction.name.replace("_", " ") if g.cmd and g.state == State.GUIDING else None,
                          fps=round(app.viewer.fps), listening=app.listener.state if app.listener else "disabled")
@@ -276,13 +337,16 @@ def make_handler(state):
                     self.send(503, b'{"error":"Detection is warming up or busy. Retrying..."}')
                 return
             actions = {"/api/target": "target", "/api/listen": "listen",
-                       "/api/stop": "stop", "/api/rotate": "rotate"}
+                       "/api/stop": "stop", "/api/rotate": "rotate", "/api/camera": "camera"}
             action = actions.get(self.path)
             if action is None:
                 self.send(404, b'{"error":"Not found"}')
                 return
             data = state.snapshot()
-            if not data.get("ready"):
+            if action == "camera" and payload.get("camera") not in ("configured", "webcam", "usb"):
+                self.send(400, b'{"error":"Choose configured, webcam or usb"}')
+                return
+            if not data.get("ready") and action not in ("stop", "camera"):
                 self.send(409, b'{"error":"Camera is not ready yet"}')
                 return
             if action == "listen" and not data.get("voice"):
@@ -301,7 +365,7 @@ def make_handler(state):
                 self.send(409, b'{"error":"Wait until the voice request finishes"}')
                 return
             try:
-                value = payload.get("rotation") if action == "rotate" else payload.get("target")
+                value = payload.get("camera") if action == "camera" else payload.get("rotation") if action == "rotate" else payload.get("target")
                 state.actions.put_nowait((action, value))
             except queue.Full:
                 self.send(429, b'{"error":"Please wait for the previous command"}')
@@ -318,6 +382,8 @@ def main():
     parser.add_argument("--no-voice", action="store_true")
     parser.add_argument("--demo", action="store_true", help="synthetic camera and mock hardware")
     parser.add_argument("--video")
+    parser.add_argument("--camera", choices=("configured", "webcam", "usb"), default="configured",
+                        help="camera source; webcam and usb bypass DroidCam Wi-Fi")
     parser.add_argument("--target")
     parser.add_argument("--rotation", type=int, choices=(0, 90, 180, 270), default=0,
                         help="clockwise camera rotation before detection")

@@ -8,6 +8,7 @@ from enum import Enum
 import numpy as np
 
 from app import voice_out
+from app.scene_motion import SceneMotion
 from shared.contracts import Detection, Direction, GuidanceCommand, HandPosition
 from vision.yolo.runtime.scan import scan
 
@@ -18,8 +19,14 @@ COVER_OVERLAP = 0.3  # ...or the hand's outline covering 30% of the box
 MISSING_FRAMES = 8  # target unseen this many frames (not under the hand) = out of view
 TARGET_LOST_S = 6.0  # out of view this long: give up and scan again
 TARGET_MEMORY_S = 1.0  # tolerate brief detector misses without discarding the box
-OCCLUSION_MEMORY_S = 4.0  # longer memory while the hand covers the remembered box
-CONTACT_HOLD_S = 0.6  # sustained overlap confirms visual contact
+OCCLUSION_MEMORY_S = 6.0  # bounded memory while the hand covers the remembered box
+CONTACT_HOLD_S = 0.6  # fresh, depth-supported arrival must persist this long
+MISSING_NOTICE_S = 0.6
+SEARCH_REMINDER_S = 8.0
+REACQUIRE_HOLD_S = 1.0
+REACQUIRE_FRAMES = 3
+NOTICE_GAP_S = 8.0
+HAND_RECOVERY_S = 1.0
 
 
 def _inside(x: float, y: float, d: Detection, margin: float = 0.0) -> bool:
@@ -104,6 +111,18 @@ class Guide:
         self._search_started = self.clock()
         self._announced_found = False
         self._announced_not_found = False
+        self.visibility = "searching"
+        self._motion = SceneMotion()
+        self._camera_drift = np.zeros(2)
+        self._memory_moved = False
+        self._last_notice = None
+        self._notice_at = float("-inf")
+        self._target_notice_at = float("-inf")
+        self._hand_notice_at = float("-inf")
+        self._visible_since = None
+        self._visible_frames = 0
+        self._hand_visible_since = None
+        self._depth_warned = False
 
     def start(self, target: str, announce: bool = True) -> None:
         """Continuously look for a target until the user changes it or quits."""
@@ -113,6 +132,17 @@ class Guide:
         self._seen_at, self._contact_since = None, None
         self._search_started = self.clock()
         self._announced_found = self._announced_not_found = False
+        self.visibility = "searching"
+        self._motion.reset()
+        self._camera_drift[:] = 0
+        self._memory_moved = False
+        self._missing_since = None
+        self._last_notice = None
+        self._notice_at = float("-inf")
+        self._target_notice_at = self._hand_notice_at = float("-inf")
+        self._visible_since = self._hand_visible_since = None
+        self._visible_frames = 0
+        self._depth_warned = False
         self._lost_since, self._warned_lost = None, False
         self.turning, self.rescan_requested = False, False
         if self.stabilizer is not None:
@@ -128,17 +158,64 @@ class Guide:
         found = self.detector.detect(frame, self.target)
         self.hand = self.tracker.track(frame)
         now = self.clock()
+        old = self.det
+        exclusions = [self.hand.box if self.hand else None]
+        if old is not None:
+            exclusions.append((old.x1, old.y1, old.x2, old.y2))
+        shift = self._motion.update(frame, exclusions)
         covering = self.det is not None and _covering(self.hand, self.det)
         if found:
+            if self._visible_since is None:
+                self._visible_since = now
+            self._visible_frames += 1
             self._seen_at = now
+            self._camera_drift[:] = 0
+            self._memory_moved = False
+            self._missing_since = None
+            stable_return = (
+                self._visible_frames >= REACQUIRE_FRAMES
+                and now - self._visible_since >= REACQUIRE_HOLD_S
+            )
+            if stable_return and self._last_notice in ("covered", "search"):
+                # Lifting a covering hand needs no "found again" announcement.
+                # Quick returns after a search warning stay quiet as well.
+                if self._last_notice == "search" and now - self._target_notice_at >= NOTICE_GAP_S:
+                    self.say(voice_out.TARGET_AGAIN.format(self.target))
+                    self._target_notice_at = now
+                self._last_notice = None
+            self.visibility = "visible"
+        else:
+            self._visible_since, self._visible_frames = None, 0
+            if self._missing_since is None:
+                self._missing_since = now
+            if shift is not None:
+                self._camera_drift += shift
+                if np.linalg.norm(self._camera_drift) > 0.025:
+                    self._memory_moved = True
+            covering = covering and not self._memory_moved
         age = now - self._seen_at if self._seen_at is not None else float("inf")
         memory = OCCLUSION_MEMORY_S if covering else TARGET_MEMORY_S
+        if not found and self._announced_found:
+            covered = covering and age <= memory
+            self.visibility = "occluded" if covered else "missing"
+            if now - self._missing_since >= MISSING_NOTICE_S:
+                notice = "covered" if covered else "search"
+                reminder = notice == "search" and now - self._notice_at >= SEARCH_REMINDER_S
+                if (notice != self._last_notice or reminder) and now - self._target_notice_at >= NOTICE_GAP_S:
+                    text = (
+                        voice_out.TARGET_COVERED.format(self.target)
+                        if covered else self._search_message(old, frame.shape)
+                    )
+                    self.say(text)
+                    self._last_notice, self._notice_at = notice, now
+                    self._target_notice_at = now
+        if not found and self._memory_moved:
+            memory = 0  # stale image coordinates are unsafe after the camera moves
         if not found and (self.det is None or age > memory):
             self.det, self.cmd = None, STOP
             self._confirmed = 0
             self._contact_since = None
             self.state = State.SCANNING
-            self._lost_since, self._warned_lost = None, False
             if self.stabilizer is not None:
                 self.stabilizer.reset()
             self.band.send(STOP)
@@ -166,27 +243,52 @@ class Guide:
         # briefly, but never drive toward an unseen object in that case.
         if not found and not covering:
             self._contact_since = None
+            self.state = State.SCANNING
             self.cmd = STOP
             self.band.send(STOP)
             return self.cmd
         self.cmd = self.compute(self.det, self.hand, frame.shape, self.config)
-        # Size-based monocular depth can become unreliable near a grasp. Use
-        # sustained visual contact instead of oscillating FORWARD/BACK forever.
-        contact = self.hand is not None and _covering(self.hand, self.det)
-        if contact:
+        # Overlap only proves alignment in the image. It must never override a
+        # FORWARD/BACK command or confirm arrival from a remembered detection.
+        contact = self.cmd.direction == Direction.ARRIVED
+        depth_known = (
+            self.hand is not None and self.det.distance_m is not None
+            and self.hand.distance_m is not None and self.det.distance_m > 0
+        )
+        tolerance = float((self.config.get("guidance") or {}).get("depth_tolerance", 0.15))
+        depth_close = depth_known and (
+            abs(self.det.distance_m - self.hand.distance_m) <= self.det.distance_m * tolerance
+        )
+        candidate = None
+        if found:
+            candidate = max(found, key=lambda d: _iou(d, old)) if old else found[0]
+        fresh_full_box = candidate is not None and (
+            old is None or (
+                (candidate.x2 - candidate.x1) * (candidate.y2 - candidate.y1)
+                >= 0.8 * (old.x2 - old.x1) * (old.y2 - old.y1)
+            )
+        )
+        if contact and fresh_full_box and depth_close:
             if self._contact_since is None:
                 self._contact_since = now
-            if arrived or now - self._contact_since >= CONTACT_HOLD_S:
-                self.cmd = GuidanceCommand(Direction.ARRIVED, 255, self.cmd.distance_px)
-            elif self.cmd.direction in (Direction.FORWARD, Direction.BACK):
+            if not arrived and now - self._contact_since < CONTACT_HOLD_S:
                 self.cmd = STOP
         else:
             self._contact_since = None
+            if contact:
+                self.cmd = STOP
+                if found and not self._depth_warned:
+                    self.say(voice_out.CHECK_DEPTH)
+                    self._depth_warned = True
+        arrival_allowed = self.cmd.direction == Direction.ARRIVED
         if self.stabilizer is not None:
             if self.cmd.direction == Direction.STOP:
                 self.stabilizer.reset()
             else:
                 self.cmd = self.stabilizer.update(self.cmd)
+            if self.cmd.direction == Direction.ARRIVED and not arrival_allowed:
+                self.cmd = STOP
+                self.stabilizer.reset()
         if self.cmd.direction == Direction.ARRIVED:
             if not arrived:
                 self.band.send(self.cmd)
@@ -199,6 +301,20 @@ class Guide:
             self.band.send(self.cmd)
         self._check_lost()
         return self.cmd
+
+    def _search_message(self, last, frame_shape):
+        if last is not None and not self._memory_moved:
+            width = frame_shape[1]
+            side = None
+            if last.x1 <= width * 0.08:
+                side = "left"
+            elif last.x2 >= width * 0.92:
+                side = "right"
+            if side:
+                if self.config.get("mirror"):
+                    side = "right" if side == "left" else "left"
+                return voice_out.LOOK_BACK.format(self.target, side)
+        return voice_out.LOOK_AROUND.format(self.target)
 
     def find(self, frames: Iterable[np.ndarray], target: str, detector=None) -> Detection | None:
         """SCANNING: returns the detection (state GUIDING) or None (state NOT_FOUND).
@@ -268,10 +384,13 @@ class Guide:
             return old
         if old is None:
             return found[0]
-        if _covering(hand, old):
-            best = found[0]
-            return replace(old, confidence=best.confidence, frame_id=best.frame_id)
         overlapping = [d for d in found if _iou(d, old) > 0]
+        if _covering(hand, old) and overlapping:
+            best = max(overlapping, key=lambda d: _iou(d, old))
+            area = (best.x2 - best.x1) * (best.y2 - best.y1)
+            if area < 0.8 * (old.x2 - old.x1) * (old.y2 - old.y1):
+                return replace(old, confidence=best.confidence, frame_id=best.frame_id)
+            return best
         return max(overlapping, key=lambda d: _iou(d, old)) if overlapping else found[0]
 
     def _track_missing(self, found: list[Detection]) -> None:
@@ -285,15 +404,27 @@ class Guide:
             self._missing_since = self.clock()
 
     def _check_lost(self) -> None:
-        if self.cmd.direction != Direction.LOST:
-            self._lost_since, self._warned_lost = None, False
-            return
         now = self.clock()
+        if self.cmd.direction != Direction.LOST:
+            self._lost_since = None
+            if self.hand is not None:
+                if self._hand_visible_since is None:
+                    self._hand_visible_since = now
+                if now - self._hand_visible_since >= HAND_RECOVERY_S:
+                    self._warned_lost = False
+            else:
+                self._hand_visible_since = None
+            return
+        self._hand_visible_since = None
         if self._lost_since is None:
             self._lost_since = now
-        elif not self._warned_lost and now - self._lost_since > HAND_LOST_AFTER_S:
+        elif (
+            not self._warned_lost and now - self._lost_since > HAND_LOST_AFTER_S
+            and now - self._hand_notice_at >= NOTICE_GAP_S
+        ):
             self.say(voice_out.HAND_LOST)
             self._warned_lost = True
+            self._hand_notice_at = now
 
     def cancel(self) -> None:
         """Abandon the current guidance (user asked for something else)."""

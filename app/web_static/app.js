@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-let current = {}, supportedKey = '', requesting = false;
+let current = {}, supportedKey = '', requesting = false, connectionNotice = false;
 const icons = {can:'▥', bottle:'♙', cup:'☕', 'cell phone':'▯', remote:'▤', mouse:'◒'};
 const labels = {'cell phone':'Phone'};
 const label = target => labels[target] || target.charAt(0).toUpperCase() + target.slice(1);
@@ -16,6 +16,7 @@ async function action(name, payload = {}) {
   finally { requesting = false; }
 }
 function show(data) {
+  if (data.camera_mode && data.camera_mode !== current.camera_mode) $('camera-source').value = data.camera_mode;
   current = data;
   const stale = data.frame_age_s !== null && data.frame_age_s > 3;
   const ready = data.ready && !stale;
@@ -32,12 +33,17 @@ function show(data) {
   $('talk').classList.toggle('recording', data.listening === 'recording');
   $('talk-label').textContent = data.listening === 'recording' ? 'Listening…' : data.listening === 'transcribing' ? 'Recognizing…' : 'Press to talk';
   $('voice-help').textContent = data.ready && !data.voice ? 'Voice is off for this session. Choose a target above.' : 'Press the wristband button, say “find a can,” then pause.';
-  $('stop').disabled = !data.ready;
+  $('stop').disabled = !data.ready && data.phase !== 'RECONNECTING';
   $('rotate').disabled = !ready || ['recording','transcribing'].includes(data.listening);
   $('rotate').textContent = `↻ Rotate camera · ${data.rotation || 0}°`;
   if (data.events?.length) $('feedback').textContent = data.events[0];
-  if (data.error) notice(data.error);
-  if (stale) notice('The camera has stopped sending frames. Guidance pauses when frames stop. Reconnect the phone camera and restart REVISION.');
+  if (data.error || stale) {
+    notice(data.error || 'Camera feed interrupted. Guidance is paused while REVISION reconnects automatically.');
+    connectionNotice = true;
+  } else if (connectionNotice && ready) {
+    notice('');
+    connectionNotice = false;
+  }
   const placeholder = $('camera-placeholder');
   placeholder.style.display = data.frame_age_s !== null && !stale ? 'none' : 'flex';
   if (data.error) { placeholder.querySelector('strong').textContent = 'Let’s reconnect your camera'; placeholder.querySelector('span:last-child').textContent = data.error; }
@@ -66,7 +72,8 @@ async function poll() {
     if (!response.ok) throw new Error();
     show(await response.json());
   } catch {
-    notice('Lost connection to REVISION. Restart the local app, then refresh this page.');
+    notice('Lost connection to REVISION. Retrying automatically.');
+    connectionNotice = true;
     $('status').textContent = 'Disconnected'; $('talk').disabled = true; $('stop').disabled = true;
     $('rotate').disabled = true;
     for (const button of $('targets').children) button.disabled = true;
@@ -74,11 +81,12 @@ async function poll() {
   setTimeout(poll,500);
 }
 $('talk').onclick = () => action('listen');
+$('connect-camera').onclick = () => action('camera', {camera: $('camera-source').value});
 $('stop').onclick = () => action('stop');
 $('rotate').onclick = () => action('rotate',{rotation:((current.rotation || 0)+90)%360});
 document.addEventListener('keydown',event => {
   if (event.repeat || ['INPUT','TEXTAREA','SELECT','BUTTON'].includes(event.target.tagName)) return;
   if (event.code === 'Escape' && !$('stop').disabled) action('stop');
 });
-document.addEventListener('visibilitychange',()=>{if(document.hidden && current.ready) action('stop');});
+document.addEventListener('visibilitychange',()=>{if(document.hidden && (current.ready || current.phase === 'RECONNECTING')) action('stop');});
 poll();
