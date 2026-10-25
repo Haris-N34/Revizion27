@@ -2,7 +2,7 @@
 #include <string.h>
 
 // Positional servos: signal pins, in user-facing direction order.
-const byte PINS[] = {9, 8, 11, 10}; // right, up, left, bottom (down)
+const byte PINS[] = {8, 11, 10, 9}; // right, up, left, bottom (down)
 const byte REST[] = {90, 90, 90, 90};
 const byte MAX_SWING = 12; // degrees either side of rest; calibrate off-wrist
 const unsigned long WATCHDOG_MS = 500;
