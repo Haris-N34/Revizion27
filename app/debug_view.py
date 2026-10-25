@@ -27,6 +27,7 @@ def render(
     cmd: GuidanceCommand | None = None,
     fps: float = 0.0,
     hint: str = "r: rescan   q: quit",
+    status_color=RED,
 ) -> np.ndarray:
     """Draw onto a copy of frame and return it."""
     out = frame.copy()
@@ -47,7 +48,7 @@ def render(
         if det is not None:
             center = tuple(int(v) for v in det.center)
             cv2.arrowedLine(out, tip, center, YELLOW, 2, cv2.LINE_AA, tipLength=0.05)
-    _text(out, f"{status}   {fps:.0f} fps", (10, 28))
+    _text(out, f"{status}   {fps:.0f} fps", (10, 28), status_color)
     if cmd is not None:
         line = f"band: {cmd.direction.name} ({cmd.direction.value},{cmd.intensity})"
         _text(out, f"{line}  {cmd.distance_px:.0f}px", (10, 58), YELLOW)

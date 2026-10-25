@@ -2,8 +2,9 @@
                    [--say-directions auto/on/off]
 
 Live view: target box, hand skeleton, hand-to-target line and band command.
-SPACE: ask out loud ("where is the can?").  r: rescan.  q / Esc: quit.
-Without --target it starts listening right away. --no-voice types instead of talking.
+SPACE: ask out loud ("where is the can?").  q / Esc: quit.
+Detection and guidance continue automatically while the target is visible.
+Without --target press SPACE to talk. --no-voice types instead of talking.
 """
 
 import argparse
@@ -15,7 +16,7 @@ from types import SimpleNamespace
 import cv2
 
 from app import voice_out
-from app.debug_view import render
+from app.debug_view import GREEN, RED, render
 from app.fakes import FakeHandTracker, PrintBand, fake_compute
 from app.loop import Guide, State
 from app.narrator import Narrator
@@ -25,7 +26,7 @@ from vision.yolo.runtime.detector import ObjectDetector
 
 WINDOW = "octaby"
 STALL_S = 3.0  # a frame slower than this dumps every thread's stack to the terminal
-SPACE, RESCAN, QUIT_KEYS = ord(" "), ord("r"), (ord("q"), 27)
+SPACE, QUIT_KEYS = ord(" "), (ord("q"), 27)
 
 
 class Quit(Exception):
@@ -147,10 +148,10 @@ def read_frames(cap):
 
 
 class App:
-    def __init__(self, args):
+    def __init__(self, args, build_parts=None):
         self.args = args
         self.config = load_config()
-        self.parts = build(self.config, args.mock_band)
+        self.parts = (build_parts or build)(self.config, args.mock_band)
         if self.parts.fakes:
             print(f"[app] fakes active: {', '.join(self.parts.fakes)}")
         self.speaker = voice_out.configure(enabled=not args.no_voice)
@@ -170,9 +171,9 @@ class App:
             turn=p.turn,
         )
         self.viewer = Viewer(show=not args.no_window)
-        # Spoken directions: on by default until a real band is connected.
-        mode = getattr(args, "say_directions", "auto")
-        narrate = mode == "on" or (mode == "auto" and not p.real_band)
+        # Speak search results and arrival; directions are opt-in only.
+        mode = getattr(args, "say_directions", "off")
+        narrate = mode == "on"
         self.narrator = Narrator(self.speaker) if narrate else None
         self.target: str | None = None
         self.pending: str | None = None  # target to scan for on the next frame
@@ -180,8 +181,10 @@ class App:
     # --- input -------------------------------------------------------------
     def ask(self) -> None:
         """Start listening (voice) or read the keyboard (--no-voice)."""
-        if self.guide.state == State.GUIDING:
-            self.guide.cancel()
+        if self.listener is not None and self.listener.state != "idle":
+            return
+        self.guide.cancel()
+        self.target, self.pending = None, None
         if self.listener is None:
             self.handle(input("What should I find? "))
         elif self.listener.state == "idle":
@@ -192,6 +195,7 @@ class App:
     def handle(self, text: str) -> None:
         target = extract_target(text, self.parts.normalize)
         if target:
+            self.speaker.say(voice_out.LOOKING.format(target))
             self.pending = target
         elif text.strip():
             self.speaker.say(voice_out.CANT_LOOK)
@@ -210,8 +214,9 @@ class App:
                 if self.guide.turning and self.guide.cmd
                 else f"guiding to {self.target}"
             ),
-            State.DONE: "ARRIVED - you're there",
+            State.DONE: "Object found",
             State.NOT_FOUND: f"NOT FOUND: {self.target}",
+            State.SCANNING: f"looking for {self.target}",
             State.IDLE: "press SPACE and ask",
         }.get(self.guide.state, self.guide.state.value)
 
@@ -219,7 +224,7 @@ class App:
         a = self.args
         if a.target:
             self.handle(a.target)
-        else:
+        elif a.no_voice:
             self.ask()
         source = a.video if a.video else camera_source(self.config)
         cap = cv2.VideoCapture(source)
@@ -230,8 +235,8 @@ class App:
         try:
             for frame in frames:
                 if self.pending:
-                    self.scan(frames)
-                    continue
+                    self.target, self.pending = self.pending, None
+                    self.guide.start(self.target, announce=False)
                 self.frame(frame)
         except (Quit, KeyboardInterrupt):
             pass
@@ -253,13 +258,12 @@ class App:
 
     def frame(self, frame) -> None:
         g = self.guide
-        if g.state == State.GUIDING:
-            g.step(frame)
+        if self.target:
+            g.follow(frame)
             if self.narrator and g.state == State.GUIDING:
                 self.narrator.update(g.cmd, turning=g.turning)
-            if g.rescan_requested:  # target left the view for too long
-                g.rescan_requested = False
-                self.pending = self.target
+            elif self.narrator:
+                self.narrator.reset()
         else:
             if self.narrator:
                 self.narrator.reset()
@@ -270,14 +274,15 @@ class App:
             g.hand = g.tracker.track(frame)
         landmarks = getattr(g.tracker, "landmarks", None)
         cmd = g.cmd if g.state == State.GUIDING else None
-        hint = "SPACE: ask   r: rescan   q: quit"
-        image = render(frame, self.status(), g.det, g.hand, landmarks, cmd, self.viewer.fps, hint)
+        hint = "continuous detection   SPACE: talk   q: quit"
+        image = render(
+            frame, self.status(), g.det, g.hand, landmarks, cmd, self.viewer.fps, hint,
+            status_color=GREEN if g.state == State.DONE else RED,
+        )
         key = self.viewer.show_frame(image)
 
         if key == SPACE:
             self.ask()
-        elif key == RESCAN and self.target:
-            self.pending = self.target
         if self.listener:
             text = self.listener.result()
             if text is not None:
@@ -294,8 +299,8 @@ def main() -> None:
     parser.add_argument(
         "--say-directions",
         choices=("auto", "on", "off"),
-        default="auto",
-        help="speak 'left', 'up'... while guiding (auto: only when no real band)",
+        default="off",
+        help="speak directions only when explicitly set to on (default: off)",
     )
     App(parser.parse_args()).run()
 

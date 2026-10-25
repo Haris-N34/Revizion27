@@ -3,3 +3,4 @@ numpy
 faster-whisper>=1.0
 sounddevice>=0.4
 pyttsx3>=2.90
+pywin32; sys_platform == "win32"

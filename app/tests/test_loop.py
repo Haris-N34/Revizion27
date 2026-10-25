@@ -300,3 +300,144 @@ def test_hand_outline_covering_object_freezes_box():
     guide.detector, guide.tracker = Partial(), HoldingTracker()
     guide.step(FRAME)
     assert replace(guide.det, confidence=0.9, frame_id=0) == full
+
+
+def test_continuous_detection_recovers_after_target_disappears():
+    guide, tracker, band, _, clock = make()
+    tracker.speed = 0
+    guide.start("can")
+    guide.detector.found_after = None
+    for _ in range(20):
+        guide.follow(FRAME)
+    assert guide.state == State.SCANNING
+    assert guide.det is None
+    assert band.sent[-1].direction == Direction.STOP
+
+    guide.detector.found_after = 0
+    for _ in range(guide.detector.confirm_frames):
+        guide.follow(FRAME)
+    assert guide.state == State.GUIDING
+    assert band.sent[-1].direction != Direction.STOP
+
+    guide.detector.found_after = None
+    clock.t = 2.0
+    guide.follow(FRAME)
+    assert guide.state == State.SCANNING
+    assert guide.det is None
+    assert band.sent[-1].direction == Direction.STOP
+
+
+def test_continuous_detection_resumes_after_arrival_without_repeating_grab():
+    guide, tracker, band, said, _ = make()
+    guide.start("can")
+    for _ in range(guide.detector.confirm_frames):
+        guide.follow(FRAME)
+    tracker.pos, tracker.speed = guide.det.center, 0
+    guide.follow(FRAME)
+    assert guide.state == State.DONE
+    guide.follow(FRAME)
+    assert band.sent[-1].direction == Direction.STOP
+    assert said.count(voice_out.ARRIVED) == 1
+    tracker.pos = (5.0, 5.0)
+    guide.follow(FRAME)
+    assert guide.state == State.GUIDING
+    assert band.sent[-1].direction not in (Direction.STOP, Direction.ARRIVED)
+
+
+def test_continuous_occlusion_remembers_box_and_confirms_contact():
+    from app.loop import CONTACT_HOLD_S, OCCLUSION_MEMORY_S
+    from shared.contracts import GuidanceCommand
+
+    guide, tracker, band, said, clock = make()
+    tracker.speed = 0
+    guide.start("can")
+    for _ in range(guide.detector.confirm_frames):
+        guide.follow(FRAME)
+    remembered = guide.det
+    tracker.pos = remembered.center
+    guide.compute = lambda *args: GuidanceCommand(Direction.FORWARD, 180, 0)
+    guide.detector.found_after = None
+    guide.follow(FRAME)
+    assert guide.det == remembered
+    assert band.sent[-1].direction == Direction.STOP
+    clock.t = CONTACT_HOLD_S + 0.1
+    guide.follow(FRAME)
+    assert guide.state == State.DONE
+    assert band.sent[-1].direction == Direction.ARRIVED
+    guide.follow(FRAME)
+    assert guide.state == State.DONE
+    assert said.count(voice_out.ARRIVED) == 1
+    assert band.sent[-1].direction == Direction.STOP
+    clock.t = OCCLUSION_MEMORY_S + 0.1
+    guide.follow(FRAME)
+    assert guide.state == State.SCANNING
+    assert guide.det is None
+
+
+def test_brief_miss_away_from_hand_keeps_memory_but_stops_motors():
+    guide, tracker, band, _, clock = make()
+    tracker.speed = 0
+    guide.start("can")
+    for _ in range(guide.detector.confirm_frames):
+        guide.follow(FRAME)
+    remembered = guide.det
+    guide.detector.found_after = None
+    clock.t = 0.2
+    guide.follow(FRAME)
+    assert guide.det == remembered
+    assert band.sent[-1].direction == Direction.STOP
+    guide.detector.found_after = 0
+    guide.follow(FRAME)
+    assert guide.state == State.GUIDING
+    assert band.sent[-1].direction != Direction.STOP
+
+
+def test_passing_hand_does_not_confirm_contact_or_override_missing_hand():
+    from app.loop import CONTACT_HOLD_S
+    from shared.contracts import GuidanceCommand
+
+    guide, tracker, _, _, clock = make()
+    tracker.speed = 0
+    guide.start("can")
+    for _ in range(guide.detector.confirm_frames):
+        guide.follow(FRAME)
+    guide.compute = lambda *args: GuidanceCommand(Direction.BACK, 180, 0)
+    tracker.pos = guide.det.center
+    guide.follow(FRAME)
+    clock.t = CONTACT_HOLD_S / 2
+    tracker.pos = (5, 5)
+    guide.follow(FRAME)
+    assert guide.state != State.DONE
+    clock.t = CONTACT_HOLD_S + 1
+    tracker.pos = guide.det.center
+    guide.follow(FRAME)
+    assert guide.state != State.DONE
+    tracker.visible = False
+    clock.t += CONTACT_HOLD_S + 1
+    guide.follow(FRAME)
+    assert guide.state != State.DONE
+
+
+def test_continuous_search_announces_timeout_once_then_found_once():
+    guide, tracker, _, said, clock = make(found_after=None)
+    tracker.speed = 0
+    guide.start("can")
+    clock.t = float(guide.config.get("scan_timeout_s", 5)) + 0.1
+    guide.follow(FRAME)
+    guide.follow(FRAME)
+    assert said.count(voice_out.NOT_FOUND.format("can")) == 1
+    guide.detector.found_after = 0
+    for _ in range(guide.detector.confirm_frames + 3):
+        guide.follow(FRAME)
+    assert said.count(voice_out.FOUND) == 1
+    guide.detector.found_after = None
+    clock.t += 10
+    guide.follow(FRAME)
+    guide.detector.found_after = 0
+    for _ in range(guide.detector.confirm_frames):
+        guide.follow(FRAME)
+    assert said.count(voice_out.FOUND) == 1
+    guide.start("can")
+    for _ in range(guide.detector.confirm_frames):
+        guide.follow(FRAME)
+    assert said.count(voice_out.FOUND) == 2

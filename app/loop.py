@@ -17,6 +17,9 @@ COVER_MARGIN = 0.15  # hand point within the box grown by 15% counts as covering
 COVER_OVERLAP = 0.3  # ...or the hand's outline covering 30% of the box
 MISSING_FRAMES = 8  # target unseen this many frames (not under the hand) = out of view
 TARGET_LOST_S = 6.0  # out of view this long: give up and scan again
+TARGET_MEMORY_S = 1.0  # tolerate brief detector misses without discarding the box
+OCCLUSION_MEMORY_S = 4.0  # longer memory while the hand covers the remembered box
+CONTACT_HOLD_S = 0.6  # sustained overlap confirms visual contact
 
 
 def _inside(x: float, y: float, d: Detection, margin: float = 0.0) -> bool:
@@ -95,6 +98,107 @@ class Guide:
         self.rescan_requested = False  # set when the target was lost; main.py rescans
         self._missing = 0
         self._missing_since: float | None = None
+        self._confirmed = 0
+        self._seen_at: float | None = None
+        self._contact_since: float | None = None
+        self._search_started = self.clock()
+        self._announced_found = False
+        self._announced_not_found = False
+
+    def start(self, target: str, announce: bool = True) -> None:
+        """Continuously look for a target until the user changes it or quits."""
+        self.cancel()
+        self.target, self.det, self.hand = target, None, None
+        self._confirmed = 0
+        self._seen_at, self._contact_since = None, None
+        self._search_started = self.clock()
+        self._announced_found = self._announced_not_found = False
+        self._lost_since, self._warned_lost = None, False
+        self.turning, self.rescan_requested = False, False
+        if self.stabilizer is not None:
+            self.stabilizer.reset()
+        self.state = State.SCANNING
+        if announce:
+            self.say(voice_out.LOOKING.format(target))
+
+    def follow(self, frame: np.ndarray) -> GuidanceCommand | None:
+        """Track continuously, retaining a bounded memory during hand occlusion."""
+        if self.target is None:
+            return None
+        found = self.detector.detect(frame, self.target)
+        self.hand = self.tracker.track(frame)
+        now = self.clock()
+        covering = self.det is not None and _covering(self.hand, self.det)
+        if found:
+            self._seen_at = now
+        age = now - self._seen_at if self._seen_at is not None else float("inf")
+        memory = OCCLUSION_MEMORY_S if covering else TARGET_MEMORY_S
+        if not found and (self.det is None or age > memory):
+            self.det, self.cmd = None, STOP
+            self._confirmed = 0
+            self._contact_since = None
+            self.state = State.SCANNING
+            self._lost_since, self._warned_lost = None, False
+            if self.stabilizer is not None:
+                self.stabilizer.reset()
+            self.band.send(STOP)
+            if (
+                not self._announced_found
+                and not self._announced_not_found
+                and now - self._search_started >= float(self.config.get("scan_timeout_s", 5))
+            ):
+                self.say(voice_out.NOT_FOUND.format(self.target))
+                self._announced_not_found = True
+            return self.cmd
+
+        self.det = self._update_target(found)
+        if found:
+            self._confirmed += 1
+        if self._confirmed < max(1, self.detector.confirm_frames):
+            self.cmd = STOP
+            self.band.send(STOP)
+            return self.cmd
+        if not self._announced_found:
+            self.say(voice_out.FOUND)
+            self._announced_found = True
+        arrived = self.state == State.DONE
+        # A missing target without a covering hand is uncertain: keep its box
+        # briefly, but never drive toward an unseen object in that case.
+        if not found and not covering:
+            self._contact_since = None
+            self.cmd = STOP
+            self.band.send(STOP)
+            return self.cmd
+        self.cmd = self.compute(self.det, self.hand, frame.shape, self.config)
+        # Size-based monocular depth can become unreliable near a grasp. Use
+        # sustained visual contact instead of oscillating FORWARD/BACK forever.
+        contact = self.hand is not None and _covering(self.hand, self.det)
+        if contact:
+            if self._contact_since is None:
+                self._contact_since = now
+            if arrived or now - self._contact_since >= CONTACT_HOLD_S:
+                self.cmd = GuidanceCommand(Direction.ARRIVED, 255, self.cmd.distance_px)
+            elif self.cmd.direction in (Direction.FORWARD, Direction.BACK):
+                self.cmd = STOP
+        else:
+            self._contact_since = None
+        if self.stabilizer is not None:
+            if self.cmd.direction == Direction.STOP:
+                self.stabilizer.reset()
+            else:
+                self.cmd = self.stabilizer.update(self.cmd)
+        if self.cmd.direction == Direction.ARRIVED:
+            if not arrived:
+                self.band.send(self.cmd)
+                self.say(voice_out.ARRIVED)
+            else:
+                self.band.send(STOP)
+            self.state = State.DONE
+        else:
+            self.state = State.GUIDING
+            self.band.send(self.cmd)
+        self._check_lost()
+        return self.cmd
 
     def find(self, frames: Iterable[np.ndarray], target: str, detector=None) -> Detection | None:
         """SCANNING: returns the detection (state GUIDING) or None (state NOT_FOUND).

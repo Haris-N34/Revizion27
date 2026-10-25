@@ -1,6 +1,6 @@
 """Spoken lines, kept short and consistent, and a non-blocking speaker.
 
-macOS uses the built-in `say` command; Windows/Linux use pyttsx3. Speech runs on a
+macOS uses `say`, Windows uses native SAPI, and Linux uses pyttsx3. Speech runs on a
 background thread so the video loop never waits for it. Every line is also printed.
 """
 
@@ -19,6 +19,7 @@ DIDNT_HEAR = "Sorry, I didn't catch that."
 HAND_LOST = "I can't see your hand."
 LOST_TARGET = "I lost the {}. Looking again."
 ARRIVED = "You're there"
+FOUND = "Object found"
 
 
 class Speaker:
@@ -70,6 +71,16 @@ class Speaker:
 def _backend():
     if sys.platform == "darwin" and shutil.which("say"):
         return lambda text: subprocess.run(["say", text], check=False)
+    if sys.platform == "win32":
+        import pythoncom
+        from win32com.client import Dispatch
+
+        # COM must be initialized on this speaker thread. Synchronous SAPI
+        # Speak handles consecutive messages without pyttsx3's event loop.
+        pythoncom.CoInitialize()
+        voice = Dispatch("SAPI.SpVoice")
+        voice.Volume = 100
+        return lambda text: voice.Speak(text, 0)
     import pyttsx3
 
     engine = pyttsx3.init()  # created on the speaker thread, used only there

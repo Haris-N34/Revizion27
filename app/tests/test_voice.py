@@ -70,6 +70,18 @@ def test_disabled_speaker_prints(capsys):
     assert not speaker.busy()
 
 
+def test_speaker_delivers_consecutive_announcements(monkeypatch):
+    spoken = []
+    monkeypatch.setattr(voice_out, "_backend", lambda: spoken.append)
+    speaker = voice_out.Speaker(enabled=True)
+    lines = [voice_out.LOOKING.format("can"), voice_out.NOT_FOUND.format("can"), voice_out.FOUND]
+    for line in lines:
+        speaker.say(line)
+    speaker.wait(timeout=1)
+    speaker.close()
+    assert spoken == lines
+
+
 def test_wait_never_hangs_when_speech_hangs(monkeypatch):
     import time
 
