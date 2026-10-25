@@ -33,6 +33,8 @@ function show(data) {
   $('talk-label').textContent = data.listening === 'recording' ? 'Listening…' : data.listening === 'transcribing' ? 'Recognizing…' : 'Press to talk';
   $('voice-help').textContent = data.ready && !data.voice ? 'Voice is off for this session. Choose a target above.' : 'Press Space, say “find a can,” then pause.';
   $('stop').disabled = !data.ready;
+  $('rotate').disabled = !ready || ['recording','transcribing'].includes(data.listening);
+  $('rotate').textContent = `↻ Rotate camera · ${data.rotation || 0}°`;
   if (data.events?.length) $('feedback').textContent = data.events[0];
   if (data.error) notice(data.error);
   if (stale) notice('The camera has stopped sending frames. Guidance pauses when frames stop. Reconnect the phone camera and restart REVISION.');
@@ -66,12 +68,14 @@ async function poll() {
   } catch {
     notice('Lost connection to REVISION. Restart the local app, then refresh this page.');
     $('status').textContent = 'Disconnected'; $('talk').disabled = true; $('stop').disabled = true;
+    $('rotate').disabled = true;
     for (const button of $('targets').children) button.disabled = true;
   }
   setTimeout(poll,500);
 }
 $('talk').onclick = () => action('listen');
 $('stop').onclick = () => action('stop');
+$('rotate').onclick = () => action('rotate',{rotation:((current.rotation || 0)+90)%360});
 document.addEventListener('keydown',event => {
   if (event.repeat || ['INPUT','TEXTAREA','SELECT','BUTTON'].includes(event.target.tagName)) return;
   if (event.code === 'Space') {event.preventDefault(); if (!$('talk').disabled) action('listen');}

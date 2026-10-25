@@ -84,6 +84,13 @@ def stop_guidance(app):
     app.guide.target, app.guide.det = None, None
 
 
+def rotate_frame(frame, angle):
+    """Rotate before detection so the video, boxes and hand coordinates agree."""
+    rotations = {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180,
+                 270: cv2.ROTATE_90_COUNTERCLOCKWISE}
+    return cv2.rotate(frame, rotations[angle]) if angle in rotations else frame
+
+
 class WebApp(App):
     def handle(self, text):
         if not getattr(self, "_ignore_transcript", False):
@@ -92,6 +99,7 @@ class WebApp(App):
 
 def run_camera(state, args):
     app, cap = None, None
+    rotation = getattr(args, "rotation", 0)
     try:
         # App creates all camera/serial/model resources on this worker thread.
         app = WebApp(args, build_parts=demo_parts if args.demo else None)
@@ -110,7 +118,8 @@ def run_camera(state, args):
             if not cap.isOpened():
                 raise RuntimeError("Cannot open the camera. Reconnect the phone camera, then restart the app.")
         state.update(ready=True, supported=app.parts.supported,
-                     voice=app.listener is not None, arduino=app.parts.real_band, demo=args.demo)
+                     voice=app.listener is not None, arduino=app.parts.real_band,
+                     demo=args.demo, rotation=rotation)
         if args.target:
             app.handle(args.target)
         while not state.shutdown.is_set():
@@ -133,6 +142,13 @@ def run_camera(state, args):
                         app._ignore_transcript = False
                         stop_guidance(app)
                         app.handle(value)
+                elif action == "rotate":
+                    target = app.target
+                    stop_guidance(app)
+                    rotation = value
+                    state.update(rotation=rotation)
+                    if target:
+                        app.handle(target)
             if time.monotonic() - state.last_client > 3 and app.target:
                 stop_guidance(app)
                 state.announce("Guidance paused: browser disconnected.")
@@ -153,7 +169,7 @@ def run_camera(state, args):
             # Consume and discard a cancelled recording before App.frame can use it.
             if getattr(app, "_ignore_transcript", False) and app.listener:
                 app.listener.result()
-            app.frame(frame)
+            app.frame(rotate_frame(frame, rotation))
             g = app.guide
             state.update(status=app.status(), phase=g.state.value, target=app.target,
                          hand=g.hand is not None, detected=g.det is not None,
@@ -240,7 +256,8 @@ def make_handler(state):
             except (ValueError, json.JSONDecodeError):
                 self.send(400, b'{"error":"Invalid request"}')
                 return
-            actions = {"/api/target": "target", "/api/listen": "listen", "/api/stop": "stop"}
+            actions = {"/api/target": "target", "/api/listen": "listen",
+                       "/api/stop": "stop", "/api/rotate": "rotate"}
             action = actions.get(self.path)
             if action is None:
                 self.send(404, b'{"error":"Not found"}')
@@ -255,8 +272,18 @@ def make_handler(state):
             if action == "target" and payload.get("target") not in data.get("supported", []):
                 self.send(400, b'{"error":"Choose a supported target"}')
                 return
+            if action == "rotate" and (
+                type(payload.get("rotation")) is not int
+                or payload["rotation"] not in (0, 90, 180, 270)
+            ):
+                self.send(400, b'{"error":"Choose rotation 0, 90, 180 or 270"}')
+                return
+            if action == "rotate" and data.get("listening") in ("recording", "transcribing"):
+                self.send(409, b'{"error":"Wait until the voice request finishes"}')
+                return
             try:
-                state.actions.put_nowait((action, payload.get("target")))
+                value = payload.get("rotation") if action == "rotate" else payload.get("target")
+                state.actions.put_nowait((action, value))
             except queue.Full:
                 self.send(429, b'{"error":"Please wait for the previous command"}')
                 return
@@ -273,6 +300,8 @@ def main():
     parser.add_argument("--demo", action="store_true", help="synthetic camera and mock hardware")
     parser.add_argument("--video")
     parser.add_argument("--target")
+    parser.add_argument("--rotation", type=int, choices=(0, 90, 180, 270), default=0,
+                        help="clockwise camera rotation before detection")
     args = parser.parse_args()
     args.no_window, args.say_directions = True, "off"
     if args.demo:

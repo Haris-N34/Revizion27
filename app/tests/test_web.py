@@ -9,7 +9,7 @@ from urllib.request import Request, urlopen
 import numpy as np
 import pytest
 
-from app.web import WebApp, WebState, WebViewer, make_handler, run_camera
+from app.web import WebApp, WebState, WebViewer, make_handler, rotate_frame, run_camera
 
 
 @pytest.fixture
@@ -89,6 +89,31 @@ def test_stop_discards_transcript_that_finishes_later():
     app.pending = None
     app.handle("find a can")
     assert app.pending is None
+
+
+def test_camera_rotation_applies_to_frame_before_guidance():
+    frame = np.zeros((2, 3, 3), dtype=np.uint8)
+    frame[0, 0] = 255
+    rotated = rotate_frame(frame, 90)
+    assert rotated.shape == (3, 2, 3)
+    assert (rotated[0, 1] == 255).all()
+    assert rotate_frame(frame, 0) is frame
+
+
+def test_rotation_api_validates_and_queues_camera_change(web_server):
+    state, url = web_server
+    state.update(ready=True, listening="idle")
+    with post(url, "/api/rotate", {"rotation": 90}) as response:
+        assert response.status == 202
+    assert state.actions.get_nowait() == ("rotate", 90)
+    for invalid in (45, "90", True):
+        with pytest.raises(HTTPError) as error:
+            post(url, "/api/rotate", {"rotation": invalid})
+        assert error.value.code == 400
+    state.update(listening="recording")
+    with pytest.raises(HTTPError) as error:
+        post(url, "/api/rotate", {"rotation": 180})
+    assert error.value.code == 409
 
 
 def test_demo_runs_and_controls_guidance_without_hardware(monkeypatch):
