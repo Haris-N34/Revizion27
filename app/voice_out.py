@@ -18,13 +18,13 @@ CANT_LOOK = "I can't look for that yet"
 DIDNT_HEAR = "Sorry, I didn't catch that."
 HAND_LOST = "I can't see your hand."
 LOST_TARGET = "I lost the {}. Looking again."
-ARRIVED = "You're there"
+ARRIVED = "You're there. You can grab it now."
 FOUND = "Object found"
 TARGET_COVERED = "Your hand is blocking the view. The {} is probably in front of you."
 LOOK_AROUND = "I lost sight of the {}. Move your hand aside and slowly look around."
 LOOK_BACK = "The {} was last seen on your {}. Slowly look that way."
 TARGET_AGAIN = "I can see the {} again."
-CHECK_DEPTH = "Your hand is lined up. Move it aside briefly so I can check the object."
+CHECK_DEPTH = "You're lined up with the object. Reach gently to check for it."
 
 
 class Speaker:

@@ -21,6 +21,7 @@ TARGET_LOST_S = 6.0  # out of view this long: give up and scan again
 TARGET_MEMORY_S = 1.0  # tolerate brief detector misses without discarding the box
 OCCLUSION_MEMORY_S = 6.0  # bounded memory while the hand covers the remembered box
 CONTACT_HOLD_S = 0.6  # fresh, depth-supported arrival must persist this long
+GRAB_PATTERN_S = 1.0  # keep heartbeats alive for the firmware's complete grab cue
 MISSING_NOTICE_S = 0.6
 SEARCH_REMINDER_S = 8.0
 REACQUIRE_HOLD_S = 1.0
@@ -108,6 +109,7 @@ class Guide:
         self._confirmed = 0
         self._seen_at: float | None = None
         self._contact_since: float | None = None
+        self._grab_until = 0.0
         self._search_started = self.clock()
         self._announced_found = False
         self._announced_not_found = False
@@ -130,6 +132,7 @@ class Guide:
         self.target, self.det, self.hand = target, None, None
         self._confirmed = 0
         self._seen_at, self._contact_since = None, None
+        self._grab_until = 0.0
         self._search_started = self.clock()
         self._announced_found = self._announced_not_found = False
         self.visibility = "searching"
@@ -301,8 +304,11 @@ class Guide:
                 self.stabilizer.reset()
         if self.cmd.direction == Direction.ARRIVED:
             if not arrived:
+                self._grab_until = now + GRAB_PATTERN_S
                 self.band.send(self.cmd)
                 self.say(voice_out.ARRIVED)
+            elif now < self._grab_until:
+                self.band.send(self.cmd)
             else:
                 self.band.send(STOP)
             self.state = State.DONE

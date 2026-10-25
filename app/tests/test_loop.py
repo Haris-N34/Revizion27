@@ -345,6 +345,12 @@ def test_continuous_detection_resumes_after_arrival_without_repeating_grab():
     guide.follow(FRAME)
     assert guide.state == State.DONE
     guide.follow(FRAME)
+    assert band.sent[-1].direction == Direction.ARRIVED
+    clock.t += 0.5
+    guide.follow(FRAME)
+    assert band.sent[-1].direction == Direction.ARRIVED
+    clock.t += 0.6
+    guide.follow(FRAME)
     assert band.sent[-1].direction == Direction.STOP
     assert said.count(voice_out.ARRIVED) == 1
     tracker.pos = (5.0, 5.0)

@@ -224,7 +224,7 @@ class App:
                 if self.guide.turning and self.guide.cmd
                 else f"guiding to {self.target}"
             ),
-            State.DONE: "Object found",
+            State.DONE: "You're there. You can grab it now.",
             State.NOT_FOUND: f"NOT FOUND: {self.target}",
             State.SCANNING: f"looking for {self.target}",
             State.IDLE: "press the wristband button and ask",
