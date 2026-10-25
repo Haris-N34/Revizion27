@@ -6,10 +6,10 @@ Manufacturer specifications: https://www.dfrobot.com.cn/goods-1174.html
 
 | Guidance | Servo signal pin |
 | --- | --- |
-| Right (`R`) | 8 |
+| Right (`R`) | 10 |
 | Top/up (`U`) | 11 |
-| Left (`L`) | 10 |
-| Back/down (`D`) | 9 |
+| Left (`L`) | 9 |
+| Bottom/down (`D`) | 8 |
 | Talk button (input) | 12 |
 
 The button is LOW when released and HIGH when pressed. Pin 12 uses `INPUT`,
