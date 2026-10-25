@@ -2,3 +2,4 @@
 deployed/
 revision-site.tar.gz
 *.log
+.vercel/

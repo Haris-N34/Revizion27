@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#202d26">
+  <title>REVISION · Live hand guidance</title>
+  <style>
+    *{box-sizing:border-box}html,body{margin:0;height:100%;background:#f4f4ec;color:#202d26;font-family:system-ui,sans-serif}body{display:flex;flex-direction:column;height:100dvh}.connection{display:flex;align-items:center;gap:16px;padding:10px 18px;background:#202d26;color:#f4f4ec;font-size:12px;flex-wrap:wrap}.connection strong{letter-spacing:1px}.connection span{flex:1}.connection a,.connection button{font:inherit;color:#d4ed8b;background:none;border:1px solid #69755d;padding:7px 10px;border-radius:6px;text-decoration:none;cursor:pointer}iframe{border:0;flex:1;width:100%;min-height:0;background:#f4f4ec}a:focus-visible,button:focus-visible{outline:3px solid #d4ed8b;outline-offset:2px}.help{padding:8px 18px;font-size:11px;color:#626d5b;margin:0;border-bottom:1px solid #dedfd3}noscript{padding:20px}@media(max-width:600px){.connection{gap:8px;padding:9px 12px}.connection span{flex-basis:100%;order:3;font-size:11px}.help{padding:8px 12px}}
+  </style>
+</head>
+<body>
+  <header class="connection"><strong>REVISION</strong><span>Live connection to your laptop and wristband</span><button id="reconnect" type="button">Reconnect</button><a id="open" href="https://textbooks-balloon-metres-music.trycloudflare.com" target="_blank" rel="noopener">Open full screen ↗</a></header>
+  <p class="help">Keep the laptop and USB Arduino connected. Press the wristband button, speak into the laptop microphone, then pause. This live connection is temporary and ends when the laptop tunnel stops.</p>
+  <iframe id="revision" title="REVISION live camera and wristband controls" src="https://textbooks-balloon-metres-music.trycloudflare.com" allow="fullscreen" allowfullscreen></iframe>
+  <noscript>Open the full-screen link above to use REVISION.</noscript>
+  <script>document.getElementById('reconnect').addEventListener('click',()=>{document.getElementById('revision').src=document.getElementById('open').href;});</script>
+</body>
+</html>
